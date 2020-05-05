@@ -10,7 +10,7 @@ For demo purposes we'll use a program that makes a single call to `fwrite`:
 
 
 ```bash
-cat ./fwrite.c
+$ cat ./fwrite.c
 ```
 
     #include <stdio.h>
@@ -29,7 +29,7 @@ Let's look at what happens when interposition works as expected. We'll interpose
 
 
 ```bash
-cat interpose_fwrite.c
+$ cat interpose_fwrite.c
 ```
 
     #define _GNU_SOURCE
@@ -47,7 +47,7 @@ cat interpose_fwrite.c
 
 
 ```bash
-LD_PRELOAD=$PWD/interpose_fwrite.so ./fwrite
+$ LD_PRELOAD=$PWD/interpose_fwrite.so ./fwrite
 ```
 
     Hello fwrite
@@ -58,7 +58,7 @@ This works because the call to fwrite happens via the PLT:
 
 
 ```bash
-objdump -D fwrite | grep 'call.*fwrite'
+$ objdump -D fwrite | grep 'call.*fwrite'
 ```
 
       4005b6:	e8 a5 fe ff ff       	callq  400460 <fwrite@plt>
@@ -68,21 +68,21 @@ We can also turn on the dynamic linker's debug output to see this binding happen
 
 
 ```bash
-LD_DEBUG=bindings ./fwrite 2>&1 | grep 'symbol.*fwrite'
+$ LD_DEBUG=bindings ./fwrite 2>&1 | grep 'symbol.*fwrite'
 ```
 
-          8260:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          8662:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 With `LD_PRELOAD`, it gets bound to our preloaded library instead:
 
 
 ```bash
-LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_fwrite.so ./fwrite 2>&1 | grep 'symbol.*fwrite'
+$ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_fwrite.so ./fwrite 2>&1 | grep 'symbol.*fwrite'
 ```
 
-          8262:	binding file ./fwrite [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0]: normal symbol `fwrite' [GLIBC_2.2.5]
-          8262:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite'
+          8664:	binding file ./fwrite [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          8664:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite'
 
 
 ## Interposing write alone doesn't work
@@ -93,7 +93,7 @@ Ultimately these all end up making a `write` system call. Maybe we can just inte
 
 
 ```bash
-cat interpose_write.c
+$ cat interpose_write.c
 ```
 
     #define _GNU_SOURCE
@@ -111,7 +111,7 @@ cat interpose_write.c
 
 
 ```bash
-LD_PRELOAD=$PWD/interpose_write.so ./fwrite
+$ LD_PRELOAD=$PWD/interpose_write.so ./fwrite
 ```
 
     Hello fwrite
@@ -121,7 +121,7 @@ It didn't work. To find out why, let's look at calls to write from within libc:
 
 
 ```bash
-objdump -D /lib/x86_64-linux-gnu/libc.so.6 | grep 'call.*fwrite'
+$ objdump -D /lib/x86_64-linux-gnu/libc.so.6 | grep 'call.*fwrite'
 ```
 
        7bcda:	e8 c1 3b 00 00       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
@@ -143,7 +143,7 @@ The dynamic linker isn't involved in resolving these calls at all:
 
 
 ```bash
-LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_write.so ./fwrite 2>&1 | grep 'symbol.*[^f]write' || true
+$ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_write.so ./fwrite 2>&1 | grep 'symbol.*[^f]write' || true
 ```
 
 ## Could we be interposing the wrong function?
@@ -152,7 +152,7 @@ As it turns out, that may not be the *only* issue. It turns out that the `write`
 
 
 ```bash
-strace -k -e write ./fwrite 2>&1
+$ strace -k -e write ./fwrite 2>&1
 ```
 
     write(1, "Hello fwrite\n", 13Hello fwrite
@@ -176,8 +176,8 @@ strace -k -e write ./fwrite 2>&1
 
 
 ```bash
-__write_address=`nm -D /lib/x86_64-linux-gnu/libc.so.6 | awk '/__write/ {print $1}'`
-nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep $__write_address
+$ __write_address=`nm -D /lib/x86_64-linux-gnu/libc.so.6 | awk '/__write/ {print $1}'`
+$ nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep $__write_address
 ```
 
     0000000000110140 W write
@@ -190,7 +190,7 @@ Looking at the objdump of `_IO_file_write`, it turns out that it does indeed use
 
 
 ```bash
-objdump -D /lib/x86_64-linux-gnu/libc.so.6 | awk '/^\S+ <_IO_file_write/ { found=1 }; /call.*write/ { if (found==1) { print $0; exit 0; } }'
+$ objdump -D /lib/x86_64-linux-gnu/libc.so.6 | awk '/^\S+ <_IO_file_write/ { found=1 }; /call.*write/ { if (found==1) { print $0; exit 0; } }'
 ```
 
        8b1b8:	e8 83 4f 08 00       	callq  110140 <__write@@GLIBC_2.2.5>
@@ -200,7 +200,7 @@ Just to be sure, let's try interposing `__write`:
 
 
 ```bash
-cat interpose_underbar_write.c
+$ cat interpose_underbar_write.c
 ```
 
     #define _GNU_SOURCE
@@ -218,7 +218,7 @@ cat interpose_underbar_write.c
 
 
 ```bash
-LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite
+$ LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite
 ```
 
     Hello fwrite
@@ -226,10 +226,10 @@ LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite
 
 
 ```bash
-LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite 2>&1 | grep 'symbol.*write'
+$ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite 2>&1 | grep 'symbol.*write'
 ```
 
-          8283:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          8684:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 As expected: there's no observable effect, and the dynamic loader never touches the `__write` symbol at all.
@@ -242,7 +242,7 @@ As it turns out, in a normal glibc build, only the memory allocation functions a
 
 
 ```bash
-objdump -D /lib/x86_64-linux-gnu/libc.so.6 | grep -o '<.*@plt>' | sort | uniq
+$ objdump -D /lib/x86_64-linux-gnu/libc.so.6 | grep -o '<.*@plt>' | sort | uniq
 ```
 
     <*ABS*+0x9d790@plt>
