@@ -4,107 +4,61 @@
 
 Calls within libc are generally pre-linked. As a result, they can't be interposed using `LD_PRELOAD`. This makes it tricky to use `LD_PRELOAD` to intercept, e.g., all calls to `write`, but there are some workarounds.
 
-## An example program
+## Doubling all writes to standard output
 
-For demo purposes we'll use a program that makes a single call to `fwrite`:
+Suppose we want to use `LD_PRELOAD` to force any output to `stdout` to happen twice. We'll start with a simple program that writes to `stdout` once:
 
 
 ```bash
-$ cat ./call_fwrite.c
+$ cat ./call_write.c
 ```
 
-    #include <stdio.h>
+    #include <unistd.h>
     #include <string.h>
     
     int main(int argc, char **argv) {
-        const char *msg = "Hello fwrite\n";
-        fwrite(msg, 1, strlen(msg), stdout);
+        const char *msg = "Hello write\n";
+        write(STDOUT_FILENO, msg, strlen(msg));
         return 0;
     }
 
 
-When we run `./call_fwrite` we get the expected output:
+When we run `./call_write` we get the expected output:
 
 
 ```bash
-$ ./call_fwrite
+$ ./call_write
 ```
 
-    Hello fwrite
+    Hello write
 
 
 If we examine the compiled binary, we can see that the call is made through the PLT (Procedure Linkage Table):
 
 
 ```bash
-$ objdump -D call_fwrite | grep 'call.*fwrite'
+$ objdump -D call_write | grep 'call.*write'
 ```
 
-    call_fwrite:     file format elf64-x86-64
-      4005b6:	e8 a5 fe ff ff       	callq  400460 <fwrite@plt>
+    call_write:     file format elf64-x86-64
+      400567:	e8 a4 fe ff ff       	callq  400410 <write@plt>
 
 
-This means that at run-time, the dynamic linker is responsible for finding the address of `fwrite` and patching it into the PLT. This `call` instruction will then use the patched table to call the correct function. We can enable debugging-output in the dynamic linker to see that it resolves the `fwrite` symbol to libc, as expected:
+This means that at run-time, the dynamic linker is responsible for finding the address of `write` and patching it into the PLT. This `call` instruction will then use the patched table to call the correct function. We can enable debugging-output in the dynamic linker to see that it resolves the `write` symbol to libc, as expected:
 
 
 ```bash
-$ LD_DEBUG=bindings ./call_fwrite 2>&1 | grep 'symbol.*fwrite'
+$ LD_DEBUG=bindings ./call_write 2>&1 | grep 'symbol.*write'
 ```
 
-         11204:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+         11410:	binding file ./call_write [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write' [GLIBC_2.2.5]
 
 
-### Interposing fwrite itself works
+### Interposing a direct call to write works
 
-We can *interpose* this call to `fwrite` by using the `LD_PRELOAD` environment variable to tell the dynamic linker to try resolving symbols in *our* library that we provide before any other libraries.
+We can *interpose* this call to `write` by using the `LD_PRELOAD` environment variable to tell the dynamic linker to try resolving symbols in *our* library that we provide before any other libraries.
 
-Let's create a small library with our own implementation of `fwrite`. We'll simply get the symbol for libc's `fwrite`, and then call it twice.
-
-
-```bash
-$ cat interpose_fwrite.c
-```
-
-    #define _GNU_SOURCE
-    
-    #include <stdio.h>
-    #include <dlfcn.h>
-    
-    size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
-        size_t (*orig_fwrite)(const void* ptr, size_t size, size_t nmemb,
-                              FILE* stream) = dlsym(RTLD_NEXT, "fwrite");
-        orig_fwrite(ptr, size, nmemb, stream);
-        return orig_fwrite(ptr, size, nmemb, stream);
-    }
-
-
-Using `LD_PRELOAD`, this works as expected. The call to `fwrite` from our `call_fwrite` program is intercepted, and we see the output twice:
-
-
-```bash
-$ LD_PRELOAD=$PWD/interpose_fwrite.so ./call_fwrite
-```
-
-    Hello fwrite
-    Hello fwrite
-
-
-We can also examine the dynamic linker's debug output again to see that it resolves `fwrite` twice. First when patching the PLT it finds our `fwrite`. At run-time when we ask it for the "next" `fwrite`, it finds libc's version:
-
-
-```bash
-$ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_fwrite.so ./call_fwrite 2>&1 | grep 'symbol.*fwrite'
-```
-
-         11208:	binding file ./call_fwrite [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0]: normal symbol `fwrite' [GLIBC_2.2.5]
-         11208:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite'
-
-
-## Interposing *all* the writes
-
-So far so good. But suppose we want to apply our doubling to *all* writes. There are a lot of different libc functions that end up writing data; e.g. `printf`, `fprintf`, `puts`, ... We could identify the full list and override all of them in our library, but it could be tricky to identify the full set of such functions, especially since in practice some of them are actually macros that call internal libc symbols rather than the public libc api. Depending what exactly we're trying to do, it'd also potentially result in some duplication of our custom logic in each of these, and potentially force us to reimplement some of the functionality in the wrapped functions.
-
-Ultimately these all end up making a `write` system call. Maybe we can just interpose the `write` function and put our logic there?
+Let's create a small library with our own implementation of `write`. We'll simply get the symbol for libc's `write`, and then call it twice.
 
 
 ```bash
@@ -117,10 +71,57 @@ $ cat interpose_write.c
     #include <unistd.h>
     
     ssize_t write(int fd, const void *buf, size_t count) {
+        // Look up the next `write` symbol, which will be glibc's
         ssize_t (*orig_write)(int fd, const void *buf, size_t count) = 
             dlsym(RTLD_NEXT, "write");
-        orig_write(fd, buf, count);
+        if (STDOUT_FILENO) {
+            // If we're writing to stdout, call the original function an extra time.
+            orig_write(fd, buf, count);
+        }
         return orig_write(fd, buf, count);
+    }
+
+
+Using `LD_PRELOAD`, this works as expected. The call to `write` from our `call_fwrite` program is intercepted, and we see the output twice:
+
+
+```bash
+$ LD_PRELOAD=$PWD/interpose_write.so ./call_write
+```
+
+    Hello write
+    Hello write
+
+
+We can also examine the dynamic linker's debug output again to see that it resolves `write` twice. First when patching the PLT it finds our `write`. At run-time when we ask it for the "next" `write`, it finds libc's version:
+
+
+```bash
+$ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_write.so ./call_write 2>&1 | grep 'symbol.*write'
+```
+
+         11414:	binding file ./call_write [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_write.so [0]: normal symbol `write' [GLIBC_2.2.5]
+         11414:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_write.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write'
+
+
+## Interposing *all* the writes
+
+So far so good. What happens though if the program we're interposing calls some other libc function to write to standard output? They'll all end up eventually needing to make a `write` system call, so our wrapper should still work... right?
+
+Let's see what happens if the program calls `fwrite` instead of `write`:
+
+
+```bash
+$ cat call_fwrite.c
+```
+
+    #include <stdio.h>
+    #include <string.h>
+    
+    int main(int argc, char **argv) {
+        const char *msg = "Hello fwrite\n";
+        fwrite(msg, 1, strlen(msg), stdout);
+        return 0;
     }
 
 
@@ -189,9 +190,13 @@ $ cat interpose_underbar_write.c
     #include <unistd.h>
     
     ssize_t __write(int fd, const void *buf, size_t count) {
+        // Look up the next `__write` symbol, which will be glibc's
         ssize_t (*orig_write)(int fd, const void *buf, size_t count) = 
             dlsym(RTLD_NEXT, "__write");
-        orig_write(fd, buf, count);
+        if (STDOUT_FILENO) {
+            // If we're writing to stdout, call the original function an extra time.
+            orig_write(fd, buf, count);
+        }
         return orig_write(fd, buf, count);
     }
 
@@ -213,10 +218,8 @@ Looking at the dynamic linker's debug output again, we can see it never looks up
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./call_fwrite 2>&1 | grep 'symbol.*write'
 ```
 
-         11221:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+         11427:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
-
-As it turns out, that may not be the *only* issue. It turns out that the `write` symbol itself involved at all in this case. We can use `strace` to get the call stack where the `write` system call gets made in our program:
 
 ## Can we interpose some other function?
 
@@ -300,6 +303,6 @@ As it turns out, in a normal glibc build, only the memory allocation functions a
 
 There are a few way around this.
 
-* Interpose every entry point into glibc that could end up calling the functionality we want to modify. This could work, but developing and maintaining 100% coverage is difficult. We'd also end up having to reimplement parts of libc. e.g. if we write a wrapper for `fwrite`, and want to interpose on the individual `write` system calls, we'd have to reimplement the in-memory buffering that `fwrite` puts in between the two ourselves (or forgo it).
+* Interpose every entry point into glibc that could end up calling the functionality we want to modify. This could work, but developing and maintaining 100% coverage is difficult and fragile. We'd also end up having to reimplement parts of libc. e.g. if we write a wrapper for `fwrite`, and want to interpose on the individual `write` system calls, we'd have to reimplement the in-memory buffering that `fwrite` puts in between the two ourselves (or forgo it).
 * Patch glibc to make calls via the PLT, so that we can interpose them via `LD_PRELOAD`. We could then inject our custom glibc as another `LD_PRELOAD` library as done [here](https://github.com/sporksmith/interpose-demo). This seems like a promising shortcut, but could result in subtle issues if our patched glibc isn't binary-compatible with the headers that the target code was compiled against; e.g. uses different `struct` or constant definitions. We could prevent those difficulties by recompiling the target software (and its dependencies, recursively) against our patched glibc and its headers, but this negates the usual advantage of `LD_PRELOAD` techniques of not having to recompile.
-* Use a different interposition mechanism than `LD_PRELOAD`. In particular, `ptrace` tells the OS kernel to intercept the system calls themselves, ensuring that we see every system call regardless of what function it's coming from, whether the program is statically linked, or even if the `syscall` instructions themselves are inlined. This works best when the behavior we're trying to modify is at the syscall level. It may also have different performance characteristics though, especially if there are other syscalls we're *not* interested in intercepting. We also can't attach a debugger to a program that is already being `ptrace`'d, making debugging more difficult.
+* Use a different interposition mechanism than `LD_PRELOAD`. In particular, `ptrace` tells the OS kernel to intercept the system calls themselves, ensuring that we see every system call regardless of what function it's coming from, whether the program is statically linked, or even if the `syscall` instructions themselves are inlined. This works best when the behavior we're trying to modify is at the syscall level. It's a bit more work to implement, though. It may also have different performance characteristics, especially if there are other syscalls we're *not* interested in intercepting. We also can't attach a debugger to a program that is already being `ptrace`'d, making debugging more difficult.
