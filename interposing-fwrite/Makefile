@@ -1,8 +1,8 @@
-README.md: README.ipynb fwrite interpose_write.so interpose_fwrite.so interpose_underbar_write.so
+README.md: README.ipynb call_fwrite interpose_write.so interpose_fwrite.so interpose_underbar_write.so
 	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f prefix.awk > $@
 
-fwrite: fwrite.c
-	$(CC) -g -o fwrite fwrite.c
+call_fwrite: call_fwrite.c
+	$(CC) -g -o $@ $<
 
 interpose_write.so: interpose_write.c
 	$(CC) -g -shared -fPIC -o $@ $< -ldl
