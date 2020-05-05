@@ -71,7 +71,7 @@ We can also turn on the dynamic linker's debug output to see this binding happen
 $ LD_DEBUG=bindings ./fwrite 2>&1 | grep 'symbol.*fwrite'
 ```
 
-          8662:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          9700:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 With `LD_PRELOAD`, it gets bound to our preloaded library instead:
@@ -81,8 +81,8 @@ With `LD_PRELOAD`, it gets bound to our preloaded library instead:
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_fwrite.so ./fwrite 2>&1 | grep 'symbol.*fwrite'
 ```
 
-          8664:	binding file ./fwrite [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0]: normal symbol `fwrite' [GLIBC_2.2.5]
-          8664:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite'
+          9702:	binding file ./fwrite [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          9702:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite'
 
 
 ## Interposing write alone doesn't work
@@ -229,7 +229,7 @@ $ LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite 2>&1 | grep 'symbol.*write'
 ```
 
-          8684:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          9725:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 As expected: there's no observable effect, and the dynamic loader never touches the `__write` symbol at all.
@@ -295,5 +295,5 @@ $ objdump -D /lib/x86_64-linux-gnu/libc.so.6 | grep -o '<.*@plt>' | sort | uniq
 There are a few way around this.
 
 * Interpose every entry point into glibc that could end up calling the functionality we want to modify. This could work, but developing and maintaining 100% coverage is difficult. We'd also end up having to reimplement parts of libc. e.g. if we write a wrapper for `fwrite`, and want to interpose on the individual `write` system calls, we'd have to reimplement the in-memory buffering that `fwrite` puts in between the two ourselves (or forgo it).
-* Patch glibc to make calls via the PLT. We could then inject our custom glibc as another `LD_PRELOAD` library as done [here](https://github.com/sporksmith/interpose-demo). This seems like a promising shortcut, but could result in subtle issues if our patched glibc isn't binary-compatible with the headers that the target code was compiled against; e.g. uses different `struct` or constant definitions. We could prevent those difficulties by recompiling the target software (and its dependencies, recursively) against our patched glibc and its headers, but this negates the usual advantage of `LD_PRELOAD` techniques of not having to recompile.
+* Patch glibc to make calls via the PLT, so that we can interpose them via `LD_PRELOAD`. We could then inject our custom glibc as another `LD_PRELOAD` library as done [here](https://github.com/sporksmith/interpose-demo). This seems like a promising shortcut, but could result in subtle issues if our patched glibc isn't binary-compatible with the headers that the target code was compiled against; e.g. uses different `struct` or constant definitions. We could prevent those difficulties by recompiling the target software (and its dependencies, recursively) against our patched glibc and its headers, but this negates the usual advantage of `LD_PRELOAD` techniques of not having to recompile.
 * Use a different interposition mechanism than `LD_PRELOAD`. In particular, `ptrace` tells the OS kernel to intercept the system calls themselves, ensuring that we see every system call regardless of what function it's coming from, whether the program is statically linked, or even if the `syscall` instructions themselves are inlined. This works best when the behavior we're trying to modify is at the syscall level. It may also have different performance characteristics though, especially if there are other syscalls we're *not* interested in intercepting. We also can't attach a debugger to a program that is already being `ptrace`'d, making debugging more difficult.
