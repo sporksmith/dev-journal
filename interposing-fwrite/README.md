@@ -61,7 +61,7 @@ This works because the call to fwrite happens via the PLT:
 objdump -D fwrite | grep 'call.*fwrite'
 ```
 
-      4005b6:	e8 a5 fe ff ff       	[01;31m[Kcallq  400460 <fwrite[m[K@plt>
+      4005b6:	e8 a5 fe ff ff       	callq  400460 <fwrite@plt>
 
 
 We can also turn on the dynamic linker's debug output to see this binding happen. Without `LD_PRELOAD`, `fwrite` gets bound to libc's symbol:
@@ -71,7 +71,7 @@ We can also turn on the dynamic linker's debug output to see this binding happen
 LD_DEBUG=bindings ./fwrite 2>&1 | grep 'symbol.*fwrite'
 ```
 
-          6988:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal [01;31m[Ksymbol `fwrite[m[K' [GLIBC_2.2.5]
+          8260:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 With `LD_PRELOAD`, it gets bound to our preloaded library instead:
@@ -81,8 +81,8 @@ With `LD_PRELOAD`, it gets bound to our preloaded library instead:
 LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_fwrite.so ./fwrite 2>&1 | grep 'symbol.*fwrite'
 ```
 
-          6990:	binding file ./fwrite [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0]: normal [01;31m[Ksymbol `fwrite[m[K' [GLIBC_2.2.5]
-          6990:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal [01;31m[Ksymbol `fwrite[m[K'
+          8262:	binding file ./fwrite [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          8262:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_fwrite.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite'
 
 
 ## Interposing write alone doesn't work
@@ -124,17 +124,17 @@ It didn't work. To find out why, let's look at calls to write from within libc:
 objdump -D /lib/x86_64-linux-gnu/libc.so.6 | grep 'call.*fwrite'
 ```
 
-       7bcda:	e8 c1 3b 00 00       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-       7cbc4:	e8 d7 2c 00 00       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-       7cbe4:	e8 b7 2c 00 00       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-       9aae6:	e8 b5 4d fe ff       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-       9c9bd:	e8 de 2e fe ff       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-       9cb20:	e8 7b 2d fe ff       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-      11e33d:	e8 7e c1 f6 ff       	[01;31m[Kcallq  8a4c0 <fwrite[m[K_unlocked@@GLIBC_2.2.5>
-      11e4bd:	e8 fe bf f6 ff       	[01;31m[Kcallq  8a4c0 <fwrite[m[K_unlocked@@GLIBC_2.2.5>
-      15e1af:	e8 ec 16 f2 ff       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-      15e210:	e8 8b 16 f2 ff       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
-      15e396:	e8 05 15 f2 ff       	[01;31m[Kcallq  7f8a0 <_IO_fwrite[m[K@@GLIBC_2.2.5>
+       7bcda:	e8 c1 3b 00 00       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+       7cbc4:	e8 d7 2c 00 00       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+       7cbe4:	e8 b7 2c 00 00       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+       9aae6:	e8 b5 4d fe ff       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+       9c9bd:	e8 de 2e fe ff       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+       9cb20:	e8 7b 2d fe ff       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+      11e33d:	e8 7e c1 f6 ff       	callq  8a4c0 <fwrite_unlocked@@GLIBC_2.2.5>
+      11e4bd:	e8 fe bf f6 ff       	callq  8a4c0 <fwrite_unlocked@@GLIBC_2.2.5>
+      15e1af:	e8 ec 16 f2 ff       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+      15e210:	e8 8b 16 f2 ff       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
+      15e396:	e8 05 15 f2 ff       	callq  7f8a0 <_IO_fwrite@@GLIBC_2.2.5>
 
 
 Note that unlike our program's call to `fwrite`, these don't have the `@plt` suffix. This is because glibc's build process effectively pre-links these calls.
@@ -180,8 +180,8 @@ __write_address=`nm -D /lib/x86_64-linux-gnu/libc.so.6 | awk '/__write/ {print $
 nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep $__write_address
 ```
 
-    [01;31m[K0000000000110140[m[K W write
-    [01;31m[K0000000000110140[m[K W __write
+    0000000000110140 W write
+    0000000000110140 W __write
 
 
 It's not clear `strace` actually knows what symbol is being used at the call site; it might just be doing a reverse lookup of the address on the stack and happening to pick `__write` between the two aliases.
@@ -229,7 +229,7 @@ LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite
 LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./fwrite 2>&1 | grep 'symbol.*write'
 ```
 
-          7011:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal [01;31m[Ksymbol `fwrite[m[K' [GLIBC_2.2.5]
+          8283:	binding file ./fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 As expected: there's no observable effect, and the dynamic loader never touches the `__write` symbol at all.
