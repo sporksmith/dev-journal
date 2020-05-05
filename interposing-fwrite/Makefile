@@ -1,5 +1,5 @@
-README.md: Interposing\ internal\ libc\ calls.ipynb fwrite interpose_write.so interpose_fwrite.so interpose_underbar_write.so
-	jupyter nbconvert Interposing\ internal\ libc\ calls.ipynb --execute --to markdown --stdout | ansi2txt | awk -f prefix.awk > $@
+README.md: README.ipynb fwrite interpose_write.so interpose_fwrite.so interpose_underbar_write.so
+	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f prefix.awk > $@
 
 fwrite: fwrite.c
 	$(CC) -g -o fwrite fwrite.c
