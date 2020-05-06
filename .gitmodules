@@ -1,0 +1,3 @@
+[submodule "patching-libc-to-interpose-syscalls/glibc"]
+	path = patching-libc-to-interpose-syscalls/glibc
+	url = https://github.com/sporksmith/glibc.git
