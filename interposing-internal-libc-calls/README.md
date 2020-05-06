@@ -51,7 +51,7 @@ This means that at run-time, the dynamic linker is responsible for finding the a
 $ LD_DEBUG=bindings ./call_write 2>&1 | grep 'symbol.*write'
 ```
 
-         11410:	binding file ./call_write [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write' [GLIBC_2.2.5]
+         28384:	binding file ./call_write [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write' [GLIBC_2.2.5]
 
 
 ### Interposing a direct call to write works
@@ -100,8 +100,8 @@ We can also examine the dynamic linker's debug output again to see that it resol
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_write.so ./call_write 2>&1 | grep 'symbol.*write'
 ```
 
-         11414:	binding file ./call_write [0] to /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_write.so [0]: normal symbol `write' [GLIBC_2.2.5]
-         11414:	binding file /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/interpose_write.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write'
+         28388:	binding file ./call_write [0] to /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0]: normal symbol `write' [GLIBC_2.2.5]
+         28388:	binding file /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write'
 
 
 ## Interposing *all* the writes
@@ -218,7 +218,7 @@ Looking at the dynamic linker's debug output again, we can see it never looks up
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./call_fwrite 2>&1 | grep 'symbol.*write'
 ```
 
-         11427:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+         28401:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 ## Can we interpose some other function?
@@ -239,9 +239,9 @@ $ strace -k -e write ./call_fwrite 2>&1
      > /lib/x86_64-linux-gnu/libc-2.27.so(_IO_default_xsputn+0x74) [0x8e494]
      > /lib/x86_64-linux-gnu/libc-2.27.so(_IO_file_xsputn+0x103) [0x8ba33]
      > /lib/x86_64-linux-gnu/libc-2.27.so(fwrite+0xd7) [0x7f977]
-     > /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/call_fwrite(main+0x5b) [0x5bb]
+     > /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/call_fwrite(main+0x5b) [0x5bb]
      > /lib/x86_64-linux-gnu/libc-2.27.so(__libc_start_main+0xe7) [0x21b97]
-     > /home/jnewsome/projects/dev-journal/interposing-fwrite/interposing-fwrite/call_fwrite(_start+0x2a) [0x49a]
+     > /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/call_fwrite(_start+0x2a) [0x49a]
     +++ exited with 0 +++
 
 
@@ -304,5 +304,5 @@ As it turns out, in a normal glibc build, only the memory allocation functions a
 There are a few way around this.
 
 * Interpose every entry point into glibc that could end up calling the functionality we want to modify. This could work, but developing and maintaining 100% coverage is difficult and fragile. We'd also end up having to reimplement parts of libc. e.g. if we write a wrapper for `fwrite`, and want to interpose on the individual `write` system calls, we'd have to reimplement the in-memory buffering that `fwrite` puts in between the two ourselves (or forgo it).
-* Patch glibc to make calls via the PLT, so that we can interpose them via `LD_PRELOAD`. We could then inject our custom glibc as another `LD_PRELOAD` library as done [here](https://github.com/sporksmith/interpose-demo). This seems like a promising shortcut, but could result in subtle issues if our patched glibc isn't binary-compatible with the headers that the target code was compiled against; e.g. uses different `struct` or constant definitions. We could prevent those difficulties by recompiling the target software (and its dependencies, recursively) against our patched glibc and its headers, but this negates the usual advantage of `LD_PRELOAD` techniques of not having to recompile.
+* Patch glibc to make calls via the PLT, so that we can interpose them via `LD_PRELOAD`. We could then inject our custom glibc as another `LD_PRELOAD` library as done [here](../patching-libc-to-interpose-syscalls). This seems like a promising shortcut, but could result in subtle issues if our patched glibc isn't binary-compatible with the headers that the target code was compiled against; e.g. uses different data type or constant definitions. We should be able to prevent those difficulties by being very careful to build our libc consistently with our distribution's libc, but we'd need to do so for every platform we intend to run on.
 * Use a different interposition mechanism than `LD_PRELOAD`. In particular, `ptrace` tells the OS kernel to intercept the system calls themselves, ensuring that we see every system call regardless of what function it's coming from, whether the program is statically linked, or even if the `syscall` instructions themselves are inlined. This works best when the behavior we're trying to modify is at the syscall level. It's a bit more work to implement, though. It may also have different performance characteristics, especially if there are other syscalls we're *not* interested in intercepting. We also can't attach a debugger to a program that is already being `ptrace`'d, making debugging more difficult.
