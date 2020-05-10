@@ -1,8 +1,8 @@
-# Poking around at Posix message queues in Linux
+# Poking around at POSIX message queues in Linux
 
-I was recently reviewing some code introduced usage of posix message queues into some tests. I hadn't used them before, and nothing in the code base already used them, so I needed to familiarize myself with them a bit.
+I was recently reviewing some code introduced usage of POSIX message queues into some tests. I hadn't used them before, and nothing in the code base already used them, so I needed to familiarize myself with them a bit.
 
-One annoyance of working with Posix message queues on Linux is that there doesn't seem to be a ubiquitous command-line tool for manipulating them. Their predecessor, sys v message queues, have `ipcmk`, `ipcrm`, and `ipcs`. [Apparently](https://unix.stackexchange.com/a/71045) HP-UX has an analagous tool `pipcs`, but it hasn't been ported to other platforms.
+One annoyance of working with POSIX message queues on Linux is that there doesn't seem to be a ubiquitous command-line tool for manipulating them. Their predecessor, sys v message queues, have `ipcmk`, `ipcrm`, and `ipcs`. [Apparently](https://unix.stackexchange.com/a/71045) HP-UX has an analagous tool `pipcs`, but it hasn't been ported to other platforms.
 
 This is somewhat mitigated by the ability to mount a virtual filesystem representing the message queues on the system, and manipulate them through normal file commands. You must be root to mount the system, but then any user can then use it. The `man` page `mq_overview(7)` has details, with an example of mounting to `/dev/mqueue`. On my system (Ubuntu 18.04), this system appears to be automatically mounted. It's unclear though whether or where you can count on it to already be mounted on other systems.
 
@@ -16,7 +16,7 @@ $ QFILE=`mktemp /dev/mqueue/mqtest.XXXX`
 $ echo $QFILE
 ```
 
-    /dev/mqueue/mqtest.rqfe
+    /dev/mqueue/mqtest.pXZW
 
 
 ## Examining a queue
@@ -28,7 +28,7 @@ We can `ls` it, though this doesn't tell us much:
 $ ls -l $QFILE
 ```
 
-    -rw------- 1 jnewsome jnewsome 80 May 10 14:08 /dev/mqueue/mqtest.rqfe
+    -rw------- 1 jnewsome jnewsome 80 May 10 14:17 /dev/mqueue/mqtest.pXZW
 
 
 We can `cat` it, giving some metadata about the state of the queue:
@@ -51,7 +51,7 @@ $ QNAME="/$(basename $QFILE)"
 $ echo $QNAME
 ```
 
-    /mqtest.rqfe
+    /mqtest.pXZW
 
 
 Let's write a small shell function to compile our test programs. It'll take the program source from `stdin`:
@@ -312,6 +312,6 @@ $ rm $QFILE
 
 ## Conclusions
 
-Posix message queues seem like a useful tool, but unfortunately lack command-line tooling. Such code isn't difficult to write, but there doesn't appear to be some existing tool you can count on to be preinstalled, or to be in your default package repositories. I wasn't even able to find source for a reasonably fleshed out one that you could download and compile yourself. Maybe I'll get around to fleshing out these examples into a full-fledged tool.
+POSIX message queues seem like a useful tool, but unfortunately lack command-line tooling. Such code isn't difficult to write, but there doesn't appear to be some existing tool you can count on to be preinstalled, or to be in your default package repositories. I wasn't even able to find source for a reasonably fleshed out one that you could download and compile yourself. Maybe I'll get around to fleshing out these examples into a full-fledged tool.
 
-sys v message queues (`man` page `svipc(7)`) are a reasonable alternative, and *do* have command-line tooling. They also have a concept of message *types*, which are a bit more powerful that posix queue priorities, in that the receiver has more control over in what order it receives the messages. As far as I can tell the primary potential reasons not to choose them over posix queues are platform availability, and on Linux the ability to use the handles as file descriptors with `select`, `poll`, and `epoll`.
+sys v message queues (`man` page `svipc(7)`) are a reasonable alternative, and *do* have command-line tooling. They also have a concept of message *types*, which are a bit more powerful that POSIX queue priorities, in that the receiver has more control over in what order it receives the messages. As far as I can tell the primary potential reasons not to choose them over POSIX queues are platform availability, and on Linux the ability to use the handles as file descriptors with `select`, `poll`, and `epoll`.
