@@ -1,9 +1,11 @@
+CFLAGS=-g -Wall -Werror
+LDLIBS=-ldl
+%.so:
+	$(CC) -shared -fPIC $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
+
 OBJS=call_fwrite call_write interpose_fwrite.so interpose_underbar_write.so interpose_write.so
 
 all: gitignore README.md
-
-CFLAGS=-g -Wall -Werror
-LDLIBS=-ldl
 
 .PHONY: gitignore
 gitignore:
@@ -17,8 +19,3 @@ clean:
 README.md: README.ipynb $(OBJS)
 	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f prefix.awk > $@
 
-%.so : %.c ; $(CC) -shared -fPIC $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
-
-interpose_write.so: interpose_write.c
-interpose_fwrite.so: interpose_fwrite.c
-interpose_underbar_write.so: interpose_underbar_write.c
