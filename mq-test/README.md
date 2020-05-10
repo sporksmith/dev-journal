@@ -16,7 +16,7 @@ $ QFILE=`mktemp /dev/mqueue/mqtest.XXXX`
 $ echo $QFILE
 ```
 
-    /dev/mqueue/mqtest.Bpnu
+    /dev/mqueue/mqtest.Qlpt
 
 
 ## Examining a queue
@@ -28,7 +28,7 @@ We can `ls` it, though this doesn't tell us much:
 $ ls -l $QFILE
 ```
 
-    -rw------- 1 jnewsome jnewsome 80 May 10 13:54 /dev/mqueue/mqtest.Bpnu
+    -rw------- 1 jnewsome jnewsome 80 May 10 14:03 /dev/mqueue/mqtest.Qlpt
 
 
 We can `cat` it, giving some metadata about the state of the queue:
@@ -51,7 +51,7 @@ $ QNAME="/$(basename $QFILE)"
 $ echo $QNAME
 ```
 
-    /mqtest.Bpnu
+    /mqtest.Qlpt
 
 
 Let's write a small shell function to compile our test programs. It'll take the program source from `stdin`:
@@ -85,9 +85,9 @@ $ read -r -d '' C_PRELIMINARIES << EOM
 #define CHECK_EQ0(x) CHECK((x) == 0)
 
 EOM
-# Force a non-error exit status for Jupyter
-true
 ```
+
+
 
 Now let's write and compile our `mq_getattr` program:
 
@@ -129,11 +129,11 @@ Unfortunately there doesn't seem to be a way to write messages to the queue from
 
 ```bash
 $ echo "A message" > $QFILE
-$ # Force a non-error exit status for Jupyter
-$ true
 ```
 
     bash: echo: write error: Invalid argument
+
+
 
 
 Let's write another small program that'll read up to the maximum message length from `stdin`, and then write it to the queue with a specified priority:
