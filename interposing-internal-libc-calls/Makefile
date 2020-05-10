@@ -1,4 +1,17 @@
-README.md: README.ipynb call_fwrite call_write interpose_write.so interpose_fwrite.so interpose_underbar_write.so
+OBJS=call_fwrite call_write fwrite interpose_fwrite.so interpose_underbar_write.so interpose_write.so
+
+all: gitignore README.md
+
+.PHONY: gitignore
+gitignore:
+	rm -f .gitignore
+	echo $(OBJS) | xargs -n1 >> .gitignore
+
+.PHONY: clean
+clean:
+	rm -f $(OBJS)
+
+README.md: README.ipynb $(OBJS)
 	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f prefix.awk > $@
 
 call_fwrite: call_fwrite.c
