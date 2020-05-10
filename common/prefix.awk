@@ -8,3 +8,5 @@
 }
 # Don't prefix here-documents. Assume it's the rest of the cell for now.
 /<</ { prefix=0 }
+# Same for function definitions
+/{/ { prefix=0 }

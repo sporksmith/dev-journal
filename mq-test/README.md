@@ -16,7 +16,7 @@ $ QFILE=`mktemp /dev/mqueue/mqtest.XXXX`
 $ echo $QFILE
 ```
 
-    /dev/mqueue/mqtest.Qlpt
+    /dev/mqueue/mqtest.rqfe
 
 
 ## Examining a queue
@@ -28,7 +28,7 @@ We can `ls` it, though this doesn't tell us much:
 $ ls -l $QFILE
 ```
 
-    -rw------- 1 jnewsome jnewsome 80 May 10 14:03 /dev/mqueue/mqtest.Qlpt
+    -rw------- 1 jnewsome jnewsome 80 May 10 14:08 /dev/mqueue/mqtest.rqfe
 
 
 We can `cat` it, giving some metadata about the state of the queue:
@@ -51,7 +51,7 @@ $ QNAME="/$(basename $QFILE)"
 $ echo $QNAME
 ```
 
-    /mqtest.Qlpt
+    /mqtest.rqfe
 
 
 Let's write a small shell function to compile our test programs. It'll take the program source from `stdin`:
@@ -59,8 +59,8 @@ Let's write a small shell function to compile our test programs. It'll take the 
 
 ```bash
 $ compile () {
-$   gcc -o $1 -xc -Wall -Werror - -lrt
-$ }
+  gcc -o $1 -xc -Wall -Werror - -lrt
+}
 ```
 
 Our helper programs are going to have a common preamble. Let's stick those in a shell variable:
