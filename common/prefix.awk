@@ -6,3 +6,5 @@
     else
         print $0
 }
+# Don't prefix here-documents. Assume it's the rest of the cell for now.
+/<</ { prefix=0 }

@@ -16,7 +16,7 @@ $ QFILE=`mktemp /dev/mqueue/mqtest.XXXX`
 $ echo $QFILE
 ```
 
-    /dev/mqueue/mqtest.rR0K
+    /dev/mqueue/mqtest.Bpnu
 
 
 ## Examining a queue
@@ -28,7 +28,7 @@ We can `ls` it, though this doesn't tell us much:
 $ ls -l $QFILE
 ```
 
-    -rw------- 1 jnewsome jnewsome 80 May 10 13:47 /dev/mqueue/mqtest.rR0K
+    -rw------- 1 jnewsome jnewsome 80 May 10 13:54 /dev/mqueue/mqtest.Bpnu
 
 
 We can `cat` it, giving some metadata about the state of the queue:
@@ -51,7 +51,7 @@ $ QNAME="/$(basename $QFILE)"
 $ echo $QNAME
 ```
 
-    /mqtest.rR0K
+    /mqtest.Bpnu
 
 
 Let's write a small shell function to compile our test programs. It'll take the program source from `stdin`:
@@ -68,25 +68,25 @@ Our helper programs are going to have a common preamble. Let's stick those in a 
 
 ```bash
 $ read -r -d '' C_PRELIMINARIES << EOM
-$ #include <fcntl.h>
-$ #include <sys/stat.h>
-$ #include <mqueue.h>
-$ #include <stdio.h>
-$ #include <stdlib.h>
-$ 
-$ #define CHECK(x) { \
-$   if (!(x)) {\
-$     perror(#x);\
-$     exit(EXIT_FAILURE);\
-$   }\
-$ }
-$ 
-$ #define CHECK_GTE0(x) CHECK((x) >= 0)
-$ #define CHECK_EQ0(x) CHECK((x) == 0)
-$ 
-$ EOM
-$ # Force a non-error exit status for Jupyter
-$ true
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <mqueue.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define CHECK(x) { \
+  if (!(x)) {\
+    perror(#x);\
+    exit(EXIT_FAILURE);\
+  }\
+}
+
+#define CHECK_GTE0(x) CHECK((x) >= 0)
+#define CHECK_EQ0(x) CHECK((x) == 0)
+
+EOM
+# Force a non-error exit status for Jupyter
+true
 ```
 
 Now let's write and compile our `mq_getattr` program:
@@ -94,19 +94,19 @@ Now let's write and compile our `mq_getattr` program:
 
 ```bash
 $ compile mq_getattr <<EOF
-$ $C_PRELIMINARIES
-$ 
-$ int main(int argc, char **argv) {
-$   mqd_t q;
-$   CHECK_GTE0(q = mq_open(argv[1], O_RDONLY));
-$   struct mq_attr attr;
-$   CHECK_EQ0(mq_getattr(q, &attr));
-$   printf("flags: %ld\n", attr.mq_flags);
-$   printf("maxmsg: %ld\n", attr.mq_maxmsg);
-$   printf("msgsize: %ld\n", attr.mq_msgsize);
-$   printf("curmsgs: %ld\n", attr.mq_curmsgs);
-$ }
-$ EOF
+$C_PRELIMINARIES
+
+int main(int argc, char **argv) {
+  mqd_t q;
+  CHECK_GTE0(q = mq_open(argv[1], O_RDONLY));
+  struct mq_attr attr;
+  CHECK_EQ0(mq_getattr(q, &attr));
+  printf("flags: %ld\n", attr.mq_flags);
+  printf("maxmsg: %ld\n", attr.mq_maxmsg);
+  printf("msgsize: %ld\n", attr.mq_msgsize);
+  printf("curmsgs: %ld\n", attr.mq_curmsgs);
+}
+EOF
 ```
 
 Running it gives us some new information about the queue:
@@ -141,24 +141,24 @@ Let's write another small program that'll read up to the maximum message length 
 
 ```bash
 $ compile mq_send <<EOF
-$ $C_PRELIMINARIES
-$ 
-$ int main(int argc, char **argv) {
-$   CHECK(argc == 3);
-$   const char* qname = argv[1];
-$   unsigned int priority = atoi(argv[2]);
-$   
-$   mqd_t q;
-$   CHECK_GTE0(q = mq_open(qname, O_WRONLY));
-$   struct mq_attr attr;
-$   CHECK_EQ0(mq_getattr(q, &attr));
-$   
-$   char *buf = malloc(attr.mq_msgsize);
-$   size_t n;
-$   CHECK_GTE0(n = fread(buf, 1, attr.mq_msgsize, stdin));
-$   CHECK_GTE0(mq_send(q, buf, n, priority));
-$ }
-$ EOF
+$C_PRELIMINARIES
+
+int main(int argc, char **argv) {
+  CHECK(argc == 3);
+  const char* qname = argv[1];
+  unsigned int priority = atoi(argv[2]);
+  
+  mqd_t q;
+  CHECK_GTE0(q = mq_open(qname, O_WRONLY));
+  struct mq_attr attr;
+  CHECK_EQ0(mq_getattr(q, &attr));
+  
+  char *buf = malloc(attr.mq_msgsize);
+  size_t n;
+  CHECK_GTE0(n = fread(buf, 1, attr.mq_msgsize, stdin));
+  CHECK_GTE0(mq_send(q, buf, n, priority));
+}
+EOF
 ```
 
 ...and use it to write a message to the queue:
@@ -166,9 +166,9 @@ $ EOF
 
 ```bash
 $ ./mq_send $QNAME 0 <<EOF
-$ Hello message queue
-$ Second line
-$ EOF
+Hello message queue
+Second line
+EOF
 ```
 
 Examining the queue, we can see that there's a message there:
@@ -199,20 +199,20 @@ Again, we'll need to write a program to read from the queue. This one will just 
 
 ```bash
 $ compile mq_recv <<EOF
-$ $C_PRELIMINARIES
-$ 
-$ int main(int argc, char **argv) {
-$   mqd_t q;
-$   CHECK_GTE0(q = mq_open(argv[1], O_RDONLY));
-$   struct mq_attr attr;
-$   CHECK_EQ0(mq_getattr(q, &attr));
-$   
-$   char *buf = malloc(attr.mq_msgsize);
-$   ssize_t n;
-$   CHECK_GTE0(n = mq_receive(q, buf, attr.mq_msgsize, NULL));
-$   CHECK_GTE0(fwrite(buf, 1, n, stdout));
-$ }
-$ EOF
+$C_PRELIMINARIES
+
+int main(int argc, char **argv) {
+  mqd_t q;
+  CHECK_GTE0(q = mq_open(argv[1], O_RDONLY));
+  struct mq_attr attr;
+  CHECK_EQ0(mq_getattr(q, &attr));
+  
+  char *buf = malloc(attr.mq_msgsize);
+  ssize_t n;
+  CHECK_GTE0(n = mq_receive(q, buf, attr.mq_msgsize, NULL));
+  CHECK_GTE0(fwrite(buf, 1, n, stdout));
+}
+EOF
 ```
 
 As expected, we can read out the message we wrote to the queue above:
@@ -254,13 +254,13 @@ We can write two messages to the queue and get them back individually:
 
 ```bash
 $ ./mq_send $QNAME 0 <<EOF
-$ First message first line
-$ First message second line
-$ EOF
-$ ./mq_send $QNAME 0 <<EOF
-$ Second message first line
-$ Second message second line
-$ EOF
+First message first line
+First message second line
+EOF
+./mq_send $QNAME 0 <<EOF
+Second message first line
+Second message second line
+EOF
 ```
 
 
