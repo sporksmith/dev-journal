@@ -1,0 +1,20 @@
+SELF_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+
+%.so: %.c
+	$(CC) -shared -fPIC $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
+
+lib%.so : %.c
+	$(CC) -shared -fPIC $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
+
+%.md: %.ipynb
+	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f $(SELF_DIR)/prefix.awk > $@
+
+.PHONY: gitignore
+gitignore:
+	rm -f .gitignore
+	echo $(OBJS) | xargs -n1 >> .gitignore
+
+.PHONY: clean
+clean:
+	rm -f $(OBJS)
+
