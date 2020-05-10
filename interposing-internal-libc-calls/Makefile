@@ -1,6 +1,6 @@
 CFLAGS=-g -Wall -Werror
 LDLIBS=-ldl
-%.so:
+%.so: %.c
 	$(CC) -shared -fPIC $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
 
 OBJS=call_fwrite call_write interpose_fwrite.so interpose_underbar_write.so interpose_write.so
