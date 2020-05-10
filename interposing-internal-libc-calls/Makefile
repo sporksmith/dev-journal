@@ -2,6 +2,9 @@ OBJS=call_fwrite call_write interpose_fwrite.so interpose_underbar_write.so inte
 
 all: gitignore README.md
 
+CFLAGS=-g -Wall -Werror
+LDLIBS=-ldl
+
 .PHONY: gitignore
 gitignore:
 	rm -f .gitignore
@@ -13,13 +16,6 @@ clean:
 
 README.md: README.ipynb $(OBJS)
 	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f prefix.awk > $@
-
-CFLAGS=-g
-
-call_fwrite: call_fwrite.c
-call_write: call_write.c
-
-LDLIBS=-ldl
 
 %.so : %.c ; $(CC) -shared -fPIC $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
 

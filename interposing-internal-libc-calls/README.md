@@ -41,7 +41,7 @@ $ objdump -D call_write | grep 'call.*write'
 ```
 
     call_write:     file format elf64-x86-64
-      400567:	e8 a4 fe ff ff       	callq  400410 <write@plt>
+      400577:	e8 a4 fe ff ff       	callq  400420 <write@plt>
 
 
 This means that at run-time, the dynamic linker is responsible for finding the address of `write` and patching it into the PLT. This `call` instruction will then use the patched table to call the correct function. We can enable debugging-output in the dynamic linker to see that it resolves the `write` symbol to libc, as expected:
@@ -51,7 +51,7 @@ This means that at run-time, the dynamic linker is responsible for finding the a
 $ LD_DEBUG=bindings ./call_write 2>&1 | grep 'symbol.*write'
 ```
 
-         28384:	binding file ./call_write [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write' [GLIBC_2.2.5]
+          5528:	binding file ./call_write [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write' [GLIBC_2.2.5]
 
 
 ### Interposing a direct call to write works
@@ -100,8 +100,8 @@ We can also examine the dynamic linker's debug output again to see that it resol
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_write.so ./call_write 2>&1 | grep 'symbol.*write'
 ```
 
-         28388:	binding file ./call_write [0] to /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0]: normal symbol `write' [GLIBC_2.2.5]
-         28388:	binding file /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write'
+          5532:	binding file ./call_write [0] to /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0]: normal symbol `write' [GLIBC_2.2.5]
+          5532:	binding file /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write'
 
 
 ## Interposing *all* the writes
@@ -218,7 +218,7 @@ Looking at the dynamic linker's debug output again, we can see it never looks up
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./call_fwrite 2>&1 | grep 'symbol.*write'
 ```
 
-         28401:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          5545:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 ## Can we interpose some other function?
@@ -239,9 +239,9 @@ $ strace -k -e write ./call_fwrite 2>&1
      > /lib/x86_64-linux-gnu/libc-2.27.so(_IO_default_xsputn+0x74) [0x8e494]
      > /lib/x86_64-linux-gnu/libc-2.27.so(_IO_file_xsputn+0x103) [0x8ba33]
      > /lib/x86_64-linux-gnu/libc-2.27.so(fwrite+0xd7) [0x7f977]
-     > /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/call_fwrite(main+0x5b) [0x5bb]
+     > /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/call_fwrite(main+0x5b) [0x5cb]
      > /lib/x86_64-linux-gnu/libc-2.27.so(__libc_start_main+0xe7) [0x21b97]
-     > /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/call_fwrite(_start+0x2a) [0x49a]
+     > /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/call_fwrite(_start+0x2a) [0x4aa]
     +++ exited with 0 +++
 
 
