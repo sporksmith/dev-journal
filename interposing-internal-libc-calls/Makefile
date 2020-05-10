@@ -1,17 +1,10 @@
-README.md: README.ipynb call_fwrite call_write interpose_write.so interpose_fwrite.so interpose_underbar_write.so
-	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f prefix.awk > $@
+CFLAGS=-g -Wall -Werror
+LDLIBS=-ldl
 
-call_fwrite: call_fwrite.c
-	$(CC) -g -o $@ $<
+OBJS=call_fwrite call_write interpose_fwrite.so interpose_underbar_write.so interpose_write.so
 
-call_write: call_write.c
-	$(CC) -g -o $@ $<
+all: gitignore README.md
 
-interpose_write.so: interpose_write.c
-	$(CC) -g -shared -fPIC -o $@ $< -ldl
+README.md: README.ipynb $(OBJS)
 
-interpose_fwrite.so: interpose_fwrite.c
-	$(CC) -g -shared -fPIC -o $@ $< -ldl
-
-interpose_underbar_write.so: interpose_underbar_write.c
-	$(CC) -g -shared -fPIC -o $@ $< -ldl
+include ../common/Makefile.common

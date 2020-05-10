@@ -1,4 +1,10 @@
-README.md: README.md.sh call_write libinterpose.so glibc-build/libc.so
+CFLAGS=-g -Wall -Werror
+LDLIBS=-ldl
+OBJS=call_write libinterpose.so
+
+all: gitignore README.md
+
+README.md: README.md.sh glibc-build/libc.so $(OBJS)
 	./README.md.sh > README.md
 
 glibc-build/libc.so:
@@ -8,11 +14,4 @@ glibc-build/libc.so:
 	cd glibc-build && ../glibc/configure --disable-sanity-checks
 	cd glibc-build && make -j8
 
-call_write: call_write.c
-	gcc -g -o call_write call_write.c
-
-libinterpose.so: interpose.c
-	gcc -fPIC -g -L. -shared -o libinterpose.so interpose.c
-
-libexplicit_interpose.so: explicit_interpose.c
-	gcc -fPIC -g -L. -shared -o libexplicit_interpose.so explicit_interpose.c -ldl
+include ../common/Makefile.common
