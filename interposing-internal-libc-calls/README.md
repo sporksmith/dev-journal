@@ -51,7 +51,7 @@ This means that at run-time, the dynamic linker is responsible for finding the a
 $ LD_DEBUG=bindings ./call_write 2>&1 | grep 'symbol.*write'
 ```
 
-          7768:	binding file ./call_write [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write' [GLIBC_2.2.5]
+          7982:	binding file ./call_write [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write' [GLIBC_2.2.5]
 
 
 ### Interposing a direct call to write works
@@ -100,8 +100,8 @@ We can also examine the dynamic linker's debug output again to see that it resol
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_write.so ./call_write 2>&1 | grep 'symbol.*write'
 ```
 
-          7783:	binding file ./call_write [0] to /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0]: normal symbol `write' [GLIBC_2.2.5]
-          7783:	binding file /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write'
+          7986:	binding file ./call_write [0] to /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0]: normal symbol `write' [GLIBC_2.2.5]
+          7986:	binding file /home/jnewsome/projects/dev-journal/interposing-internal-libc-calls/interpose_write.so [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `write'
 
 
 ## Interposing *all* the writes
@@ -218,7 +218,7 @@ Looking at the dynamic linker's debug output again, we can see it never looks up
 $ LD_DEBUG=bindings LD_PRELOAD=$PWD/interpose_underbar_write.so ./call_fwrite 2>&1 | grep 'symbol.*write'
 ```
 
-          7796:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
+          7999:	binding file ./call_fwrite [0] to /lib/x86_64-linux-gnu/libc.so.6 [0]: normal symbol `fwrite' [GLIBC_2.2.5]
 
 
 ## Can we interpose some other function?
