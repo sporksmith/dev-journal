@@ -16,7 +16,7 @@ $ QFILE=`mktemp /dev/mqueue/mqtest.XXXX`
 $ echo $QFILE
 ```
 
-    /dev/mqueue/mqtest.rlYq
+    /dev/mqueue/mqtest.jeo0
 
 
 ## Examining a queue
@@ -28,7 +28,7 @@ We can `ls` it, though this doesn't tell us much:
 $ ls -l $QFILE
 ```
 
-    -rw------- 1 jnewsome jnewsome 80 May 11 08:40 /dev/mqueue/mqtest.rlYq
+    -rw------- 1 jnewsome jnewsome 80 May 11 08:50 /dev/mqueue/mqtest.jeo0
 
 
 We can `cat` it, giving some metadata about the state of the queue:
@@ -51,7 +51,7 @@ $ QNAME="/$(basename $QFILE)"
 $ echo $QNAME
 ```
 
-    /mqtest.rlYq
+    /mqtest.jeo0
 
 
 Let's write a small shell function to compile our test programs. It'll take the program source from `stdin`:
@@ -85,9 +85,8 @@ $ read -r -d '' C_PRELIMINARIES << EOM
 #define CHECK_EQ0(x) CHECK((x) == 0)
 
 EOM
+true # Suppress error
 ```
-
-
 
 Now let's write and compile our `mq_getattr` program:
 
@@ -128,12 +127,10 @@ Unfortunately there doesn't seem to be a way to write messages to the queue via 
 
 
 ```bash
-$ echo "A message" > $QFILE
+$ echo "A message" > $QFILE || true
 ```
 
     bash: echo: write error: Invalid argument
-
-
 
 
 Let's write another small program that'll read up to the maximum message length from `stdin`, and then write it to the queue with a specified priority:
@@ -159,6 +156,7 @@ int main(int argc, char **argv) {
   CHECK_GTE0(mq_send(q, buf, n, priority));
 }
 EOF
+true # Suppress error
 ```
 
 ...and use it to write a message to the queue:
@@ -314,29 +312,11 @@ While writing this I inadvertently bumped into the per-user limit when I was una
 
 
 ```bash
-$ for i in {1..10}; do mktemp /dev/mqueue/exhaustXXX; done
+$ for i in {1..10}; do touch /dev/mqueue/exhaust${i}; done
+true # Suppress error
 ```
 
-    /dev/mqueue/exhaust0U3
-    /dev/mqueue/exhaustT7l
-    /dev/mqueue/exhaustnIS
-    /dev/mqueue/exhaustKrG
-    /dev/mqueue/exhaustAc4
-    /dev/mqueue/exhaust3cG
-    /dev/mqueue/exhaustMS1
-    /dev/mqueue/exhausthO7
-    /dev/mqueue/exhaustT9u
-    mktemp: failed to create file via template ‘/dev/mqueue/exhaustXXX’: Too many open files
-
-
-
-
-
-```bash
-$ ls /dev/mqueue | wc -l
-```
-
-    9
+    touch: cannot touch '/dev/mqueue/exhaust10': Too many open files
 
 
 I believe the limit we're hitting is the per-user limit on message queues in bytes:

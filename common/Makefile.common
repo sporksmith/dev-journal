@@ -7,7 +7,7 @@ lib%.so : %.c
 	$(CC) -shared -fPIC $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
 
 %.md: %.ipynb
-	jupyter nbconvert --execute --to markdown --stdout --allow-errors $< | ansi2txt | awk -f $(SELF_DIR)/prefix.awk > $@
+	jupyter nbconvert --execute --to markdown --stdout $< | ansi2txt | awk -f $(SELF_DIR)/prefix.awk > $@
 
 .PHONY: gitignore
 gitignore:
