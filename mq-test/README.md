@@ -16,7 +16,7 @@ $ QFILE=`mktemp /dev/mqueue/mqtest.XXXX`
 $ echo $QFILE
 ```
 
-    /dev/mqueue/mqtest.wmUq
+    /dev/mqueue/mqtest.rlYq
 
 
 ## Examining a queue
@@ -28,7 +28,7 @@ We can `ls` it, though this doesn't tell us much:
 $ ls -l $QFILE
 ```
 
-    -rw------- 1 jnewsome jnewsome 80 May 10 18:05 /dev/mqueue/mqtest.wmUq
+    -rw------- 1 jnewsome jnewsome 80 May 11 08:40 /dev/mqueue/mqtest.rlYq
 
 
 We can `cat` it, giving some metadata about the state of the queue:
@@ -51,7 +51,7 @@ $ QNAME="/$(basename $QFILE)"
 $ echo $QNAME
 ```
 
-    /mqtest.wmUq
+    /mqtest.rlYq
 
 
 Let's write a small shell function to compile our test programs. It'll take the program source from `stdin`:
@@ -303,9 +303,59 @@ $ ./mq_recv $QNAME
 
 ## Resource usage and cleanup
 
-There are system-wide and per-user limits on message queues. It's a good idea to clean them up when you're done with them, using `rm` from the shell or `mq_unlink` from C.
+There are system-wide and per-user limits on message queues, and these are surprisingly small by default. Let's go ahead and clean up our queue from above:
 
 
 ```bash
 $ rm $QFILE
+```
+
+While writing this I inadvertently bumped into the per-user limit when I was unable to create a 10th queue:
+
+
+```bash
+$ for i in {1..10}; do mktemp /dev/mqueue/exhaustXXX; done
+```
+
+    /dev/mqueue/exhaust0U3
+    /dev/mqueue/exhaustT7l
+    /dev/mqueue/exhaustnIS
+    /dev/mqueue/exhaustKrG
+    /dev/mqueue/exhaustAc4
+    /dev/mqueue/exhaust3cG
+    /dev/mqueue/exhaustMS1
+    /dev/mqueue/exhausthO7
+    /dev/mqueue/exhaustT9u
+    mktemp: failed to create file via template ‘/dev/mqueue/exhaustXXX’: Too many open files
+
+
+
+
+
+```bash
+$ ls /dev/mqueue | wc -l
+```
+
+    9
+
+
+I believe the limit we're hitting is the per-user limit on message queues in bytes:
+
+
+```bash
+$ ulimit -a | grep POSIX
+```
+
+    POSIX message queues     (bytes, -q) 819200
+
+
+As we saw from the `mq_getattr` output above, each queue has `msgsize` of `8192`, and `maxmsg` of `10`. Therefore `10` queues would equal the `819200` limit. Apparently the limit is applied to the *potential* size of the queue. This is probably preferable over being able to create more queues and then hitting the resource limit when trying to write to them.
+
+It does seem likely that these parametes were chosen with the intent of allowing `10` queues per user, but that either the limit is being applied with `<` rather than `<=`, or that there's some other per-queue overhead is also being counted.
+
+In any case, let's clean up.
+
+
+```bash
+$ rm /dev/mqueue/exhaust*
 ```
