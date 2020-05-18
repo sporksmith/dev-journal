@@ -6,6 +6,10 @@ show_cmd () {
 }
 
 cat <<EOF
+title: Patching glibc to make its syscalls interposable
+date: 2020-05-04
+slug: patching-glibc-to-make-syscalls-interposable
+
 # Patching glibc to make its syscalls interposable
 
 Suppose we have a program, call_write.c, that writes some strings to stdout:
