@@ -228,14 +228,6 @@ int main(void)
 		}
 
 		/*
-		 * Drop privileges. We definitely can't mount as uid 1000.
-		 */
-		if (setuid(1000) < 0) {
-			perror("setuid");
-			exit(1);
-		}
-
-		/*
 		 * Send the listener to the parent; also serves as
 		 * synchronization.
 		 */
