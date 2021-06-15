@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stddef.h>
+#include <sys/prctl.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -200,6 +201,10 @@ out:
 
 int main(void)
 {
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
+		perror("prctl");
+		return 1;
+	}
 	int sk_pair[2], ret = 1, status, listener;
 	pid_t worker = 0 , tracer = 0;
 
