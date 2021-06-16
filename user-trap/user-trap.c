@@ -119,6 +119,18 @@ static int handle_req(struct seccomp_notif *req,
 	}
 
 	/*
+	 * Phew, we've got the right /proc/pid/mem. Now we can read it. Note
+	 * that to avoid another TOCTOU, we should read all of the pointer args
+	 * before we decide to allow the syscall.
+	 */
+	struct timespec ns_req, res;
+	if (process_vm_readv(req->pid,
+				&(struct iovec){.iov_base=&ns_req, .iov_len=sizeof(ns_req)}, 1, &(struct iovec){.iov_base=(void*)req->data.args[0], .iov_len=sizeof(ns_req)}, 1, 0) < 0) {
+		perror("process_vm_readv");
+		return -1;
+	}
+
+	/*
 	 * Now we avoid a TOCTOU: we referred to a pid by its pid, but since
 	 * the pid that made the syscall may have died, we need to confirm that
 	 * the pid is still valid after we open its /proc/pid/mem file. We can
@@ -134,20 +146,9 @@ static int handle_req(struct seccomp_notif *req,
 		return -1;
 	}
 
-	/*
-	 * Phew, we've got the right /proc/pid/mem. Now we can read it. Note
-	 * that to avoid another TOCTOU, we should read all of the pointer args
-	 * before we decide to allow the syscall.
-	 */
-	struct timespec ns_req, res;
-	if (process_vm_readv(req->pid,
-				&(struct iovec){.iov_base=&ns_req, .iov_len=sizeof(ns_req)}, 1, &(struct iovec){.iov_base=(void*)req->data.args[0], .iov_len=sizeof(ns_req)}, 1, 0) < 0) {
-		perror("process_vm_readv");
-		return -1;
-	}
-
 	printf("handle_req got nanosleep %ld.%ld\n", ns_req.tv_sec, ns_req.tv_nsec);
 	resp->error = 0;
+	resp->val = 2;
 	return 0;
 }
 
