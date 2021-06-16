@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <sys/user.h>
 #include <sys/ioctl.h>
 #include <sys/ptrace.h>
@@ -105,30 +108,13 @@ static int user_trap_syscall(int nr, unsigned int flags)
 static int handle_req(struct seccomp_notif *req,
 		      struct seccomp_notif_resp *resp, int listener)
 {
-	char path[PATH_MAX], source[PATH_MAX], target[PATH_MAX];
-	int ret = -1, mem;
-
 	resp->id = req->id;
 	resp->error = -EPERM;
 	resp->val = 0;
+	printf("got req\n");
 
-	if (req->data.nr != __NR_mount) {
-		fprintf(stderr, "huh? trapped something besides mount? %d\n", req->data.nr);
-		return -1;
-	}
-
-	/* Only allow bind mounts. */
-	if (!(req->data.args[3] & MS_BIND))
-		return 0;
-
-	/*
-	 * Ok, let's read the task's memory to see where they wanted their
-	 * mount to go.
-	 */
-	snprintf(path, sizeof(path), "/proc/%d/mem", req->pid);
-	mem = open(path, O_RDONLY);
-	if (mem < 0) {
-		perror("open mem");
+	if (req->data.nr != __NR_nanosleep) {
+		fprintf(stderr, "huh? trapped something besides nanosleep? %d\n", req->data.nr);
 		return -1;
 	}
 
@@ -145,7 +131,7 @@ static int handle_req(struct seccomp_notif *req,
 	 */
 	if (ioctl(listener, SECCOMP_IOCTL_NOTIF_ID_VALID, &req->id) < 0) {
 		fprintf(stderr, "task died before we could map its memory\n");
-		goto out;
+		return -1;
 	}
 
 	/*
@@ -153,56 +139,22 @@ static int handle_req(struct seccomp_notif *req,
 	 * that to avoid another TOCTOU, we should read all of the pointer args
 	 * before we decide to allow the syscall.
 	 */
-	if (lseek(mem, req->data.args[0], SEEK_SET) < 0) {
-		perror("seek");
-		goto out;
+	struct timespec ns_req, res;
+	if (process_vm_readv(req->pid,
+				&(struct iovec){.iov_base=&ns_req, .iov_len=sizeof(ns_req)}, 1, &(struct iovec){.iov_base=(void*)req->data.args[0], .iov_len=sizeof(ns_req)}, 1, 0) < 0) {
+		perror("process_vm_readv");
+		return -1;
 	}
 
-	ret = read(mem, source, sizeof(source));
-	if (ret < 0) {
-		perror("read");
-		goto out;
-	}
-
-	if (lseek(mem, req->data.args[1], SEEK_SET) < 0) {
-		perror("seek");
-		goto out;
-	}
-
-	ret = read(mem, target, sizeof(target));
-	if (ret < 0) {
-		perror("read");
-		goto out;
-	}
-
-	/*
-	 * Our policy is to only allow bind mounts inside /tmp. This isn't very
-	 * interesting, because we could do unprivlieged bind mounts with user
-	 * namespaces already, but you get the idea.
-	 */
-	if (!strncmp(source, "/tmp/", 5) && !strncmp(target, "/tmp/", 5)) {
-		if (mount(source, target, NULL, req->data.args[3], NULL) < 0) {
-			ret = -1;
-			perror("actual mount");
-			goto out;
-		}
-		resp->error = 0;
-	}
-
-	/* Even if we didn't allow it because of policy, generating the
-	 * response was be a success, because we want to tell the worker EPERM.
-	 */
-	ret = 0;
-
-out:
-	close(mem);
-	return ret;
+	printf("handle_req got nanosleep %ld.%ld\n", ns_req.tv_sec, ns_req.tv_nsec);
+	resp->error = 0;
+	return 0;
 }
 
 int main(void)
 {
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
-		perror("prctl");
+		perror("prctl PR_SET_NO_NEW_PRIVS");
 		return 1;
 	}
 	int sk_pair[2], ret = 1, status, listener;
@@ -220,7 +172,7 @@ int main(void)
 	}
 
 	if (worker == 0) {
-		listener = user_trap_syscall(__NR_mount,
+		listener = user_trap_syscall(__NR_nanosleep,
 					     SECCOMP_FILTER_FLAG_NEW_LISTENER);
 		if (listener < 0) {
 			perror("seccomp");
@@ -235,32 +187,8 @@ int main(void)
 			exit(1);
 		close(listener);
 
-		if (mkdir("/tmp/foo", 0755) < 0) {
-			perror("mkdir");
-			exit(1);
-		}
-
-		/*
-		 * Try a bad mount just for grins.
-		 */
-		if (mount("/dev/sda", "/tmp/foo", NULL, 0, NULL) != -1) {
-			fprintf(stderr, "huh? mounted /dev/sda?\n");
-			exit(1);
-		}
-
-		if (errno != EPERM) {
-			perror("bad error from mount");
-			exit(1);
-		}
-
-		/*
-		 * Ok, we expect this one to succeed.
-		 */
-		if (mount("/tmp/foo", "/tmp/foo", NULL, MS_BIND, NULL) < 0) {
-			perror("mount");
-			exit(1);
-		}
-
+		long rv = syscall(__NR_nanosleep,&(struct timespec){.tv_sec=1,.tv_nsec=2});
+		printf("Caller got rv %ld, errno %d", rv, errno);
 		exit(0);
 	}
 
@@ -276,6 +204,7 @@ int main(void)
 	 * but it makes the particular writing of this sample easier, since we
 	 * can just wait ofr the tracee to exit and kill the tracer.
 	 */
+#if 0
 	tracer = fork();
 	if (tracer < 0) {
 		perror("fork");
@@ -283,6 +212,7 @@ int main(void)
 	}
 
 	if (tracer == 0) {
+#endif
 		struct seccomp_notif *req;
 		struct seccomp_notif_resp *resp;
 		struct seccomp_notif_sizes sizes;
@@ -332,24 +262,17 @@ out_req:
 		free(req);
 out_close:
 		close(listener);
+
+#if 0
 		exit(1);
 	}
+#endif
 
 	close(listener);
 
 	if (waitpid(worker, &status, 0) != worker) {
 		perror("waitpid");
 		goto out_kill;
-	}
-
-	if (umount2("/tmp/foo", MNT_DETACH) < 0 && errno != EINVAL) {
-		perror("umount2");
-		goto out_kill;
-	}
-
-	if (remove("/tmp/foo") < 0 && errno != ENOENT) {
-		perror("remove");
-		exit(1);
 	}
 
 	if (!WIFEXITED(status) || WEXITSTATUS(status)) {
