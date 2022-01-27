@@ -11,6 +11,9 @@ _Atomic int count = 0;
 
 // Signal handler.
 void handler(int signo) {
+  if(signo != SIGUSR1){
+    abort();
+  }
   atomic_fetch_add(&count, 1);
 }
 
@@ -27,8 +30,8 @@ int main(int argc, char **argv) {
     abort();
   }
 
-  // Set handler for SIGUSR1
-  if (sigaction(SIGUSR1, &(struct sigaction){.sa_handler = handler}, NULL) != 0) {
+  // Set handler for SIGUSR1. SA_NODEFER isn't required here, but see below.
+  if (sigaction(SIGUSR1, &(struct sigaction){.sa_handler = handler, .sa_flags = SA_NODEFER}, NULL) != 0) {
     abort();
   }
 
@@ -63,7 +66,12 @@ int main(int argc, char **argv) {
     abort();
   }
 
-  // Unblock the signal.
+  // Unblock the signal. The signal will be synchronously delivered *twice*.
+  // Since we specified SA_NODEFER, the handler itself gets interrupted by the
+  // other instance of the signal, which can be verified in gdb. If we didn't
+  // specify SA_NODEFER, the signal would still be delivered twice, but the
+  // handler would be allowed to finish processing the first signal before the
+  // second is delivered.
   if (sigprocmask(SIG_UNBLOCK, &mask, NULL) != 0) {
     abort();
   }
