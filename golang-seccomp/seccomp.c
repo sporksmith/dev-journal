@@ -2,7 +2,9 @@
 
 #include <linux/filter.h>
 #include <linux/seccomp.h>
+#include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -18,63 +20,10 @@
 #define SS_AUTODISARM (1U << 31)
 #endif
 
-static long _syscall(long n, ...) {
-    va_list args;
-    va_start(args, n);
-    long arg1 = va_arg(args, long);
-    long arg2 = va_arg(args, long);
-    long arg3 = va_arg(args, long);
-    long arg4 = va_arg(args, long);
-    long arg5 = va_arg(args, long);
-    long arg6 = va_arg(args, long);
-    va_end(args);
+static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext);
+static long _syscall(long n, ...);
 
-    long rv;
-
-    register long r10 __asm__("r10") = arg4;
-    register long r8 __asm__("r8") = arg5;
-    register long r9 __asm__("r9") = arg6;
-    __asm__ __volatile__("syscall"
-                         : "=a"(rv)
-                         : "a"(n), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10), "r"(r8), "r"(r9)
-                         : "rcx", "r11", "memory");
-    return rv;
-}
-
-static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
-  ucontext_t* ctx = (ucontext_t*)(voidUcontext);
-  greg_t* regs = ctx->uc_mcontext.gregs;
-
-  char buf[100];
-  // XXX not guaranteed as signal-safe.
-  sprintf(buf, "Trapped syscall %lld\n", regs[REG_RAX]);
-  _syscall(SYS_write, 2, buf, strlen(buf));
-
-  long n = regs[REG_RAX];
-  long args[6] = {regs[REG_RDI], regs[REG_RSI], regs[REG_RDX], regs[REG_R10], regs[REG_R8], regs[REG_R9]};
-
-  // Don't allow overwriting the SIGSYS handler.
-  if (n == SYS_rt_sigaction && args[0] == SIGSYS) {
-    args[1] = 0;
-  }
-
-  // Don't allow masking SIGSYS.
-  // Using implementation details of the kernel's definition of sigset (as a 64 bit bitfield) here.
-  // Careful not to mutate the passed in pointer, which would break const correctness.
-  uint64_t alt_sigset;
-  if (n == SYS_rt_sigprocmask) {
-    int how = args[0];
-    const uint64_t *set = (const uint64_t*)args[1];
-    if (set != NULL && (how == SIG_BLOCK || how == SIG_SETMASK)) {
-      alt_sigset = *set & ~(UINT64_C(1)<<(SIGSYS-1));
-      args[1] = (long)&alt_sigset;
-    }
-  }
-
-  regs[REG_RAX] = _syscall(n, args[0], args[1], args[2], args[3], args[4], args[5]);
-}
-
-static void _setup_sigaltstack() {
+static void _init_thread() {
   static __thread char stack_buf[8 * 1<<20];
   stack_t stack = {
     .ss_sp = stack_buf,
@@ -86,9 +35,7 @@ static void _setup_sigaltstack() {
   }
 }
 
-__attribute__((constructor)) static void load() {
-  _setup_sigaltstack();
-  
+static void _init_process() {
   if (sigaction(SIGSYS,
         &(struct sigaction){
           .sa_sigaction = _handle_sigsys,
@@ -144,4 +91,74 @@ __attribute__((constructor)) static void load() {
     if (syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_SPEC_ALLOW, &prog)) {
         abort();
     }
+}
+
+static void _ensure_initd() {
+  static pthread_once_t init_process_once = PTHREAD_ONCE_INIT;
+  pthread_once(&init_process_once, _init_process);
+
+  static __thread pthread_once_t init_thread_once = PTHREAD_ONCE_INIT;
+  pthread_once(&init_thread_once, _init_thread);
+}
+
+static long _syscall(long n, ...) {
+    va_list args;
+    va_start(args, n);
+    long arg1 = va_arg(args, long);
+    long arg2 = va_arg(args, long);
+    long arg3 = va_arg(args, long);
+    long arg4 = va_arg(args, long);
+    long arg5 = va_arg(args, long);
+    long arg6 = va_arg(args, long);
+    va_end(args);
+
+    long rv;
+
+    register long r10 __asm__("r10") = arg4;
+    register long r8 __asm__("r8") = arg5;
+    register long r9 __asm__("r9") = arg6;
+    __asm__ __volatile__("syscall"
+                         : "=a"(rv)
+                         : "a"(n), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10), "r"(r8), "r"(r9)
+                         : "rcx", "r11", "memory");
+    return rv;
+}
+
+static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
+  ucontext_t* ctx = (ucontext_t*)(voidUcontext);
+  greg_t* regs = ctx->uc_mcontext.gregs;
+
+  char buf[100];
+  // XXX not guaranteed as signal-safe.
+  sprintf(buf, "Trapped syscall %lld\n", regs[REG_RAX]);
+  _syscall(SYS_write, 2, buf, strlen(buf));
+
+  long n = regs[REG_RAX];
+  long args[6] = {regs[REG_RDI], regs[REG_RSI], regs[REG_RDX], regs[REG_R10], regs[REG_R8], regs[REG_R9]};
+
+  // Don't allow overwriting the SIGSYS handler.
+  if (n == SYS_rt_sigaction && args[0] == SIGSYS) {
+    args[1] = 0;
+  }
+
+  // Don't allow masking SIGSYS.
+  // Using implementation details of the kernel's definition of sigset (as a 64 bit bitfield) here.
+  // Careful not to mutate the passed in pointer, which would break const correctness.
+  uint64_t alt_sigset;
+  if (n == SYS_rt_sigprocmask) {
+    int how = args[0];
+    const uint64_t *set = (const uint64_t*)args[1];
+    if (set != NULL && (how == SIG_BLOCK || how == SIG_SETMASK)) {
+      alt_sigset = *set & ~(UINT64_C(1)<<(SIGSYS-1));
+      args[1] = (long)&alt_sigset;
+    }
+  }
+
+  // 
+
+  regs[REG_RAX] = _syscall(n, args[0], args[1], args[2], args[3], args[4], args[5]);
+}
+
+__attribute__((constructor)) static void load() {
+  _ensure_initd();
 }
