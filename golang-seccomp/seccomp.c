@@ -21,9 +21,36 @@
 #endif
 
 static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext);
-static long _syscall(long n, ...);
 
+// Same API as libc's syscall(2), but our seccomp filter below ignores syscalls
+// made from this function. e.g. our our seccomp signal handler uses this to
+// make syscalls without recursively trapping.
+static long _syscall(long n, ...) {
+    va_list args;
+    va_start(args, n);
+    long arg1 = va_arg(args, long);
+    long arg2 = va_arg(args, long);
+    long arg3 = va_arg(args, long);
+    long arg4 = va_arg(args, long);
+    long arg5 = va_arg(args, long);
+    long arg6 = va_arg(args, long);
+    va_end(args);
+
+    long rv;
+
+    register long r10 __asm__("r10") = arg4;
+    register long r8 __asm__("r8") = arg5;
+    register long r9 __asm__("r9") = arg6;
+    __asm__ __volatile__("syscall"
+                         : "=a"(rv)
+                         : "a"(n), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10), "r"(r8), "r"(r9)
+                         : "rcx", "r11", "memory");
+    return rv;
+}
+
+// One-time initialization per thread.
 static void _init_thread() {
+#if 0
   static __thread char stack_buf[8 * 1<<20];
   stack_t stack = {
     .ss_sp = stack_buf,
@@ -33,9 +60,13 @@ static void _init_thread() {
   if (sigaltstack(&stack, NULL) != 0) {
     abort();
   }
+#endif
 }
 
+// One-time initialization per process.
 static void _init_process() {
+  // Install a signal handler for SIGSYS. This will get invoked via our seccomp
+  // filter, which we install below.
   if (sigaction(SIGSYS,
         &(struct sigaction){
           .sa_sigaction = _handle_sigsys,
@@ -44,10 +75,13 @@ static void _init_process() {
     abort();
   }
 
+  // Drop ability to gain privileges (e.g. via setuid binaries), which allows
+  // us to install a seccomp filter as non-root.
   if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
       abort();
   }
 
+  // Seccomp filter we're going to install.
   struct sock_filter filter[] = {
         /* accumulator := syscall number */
         BPF_STMT(BPF_LD + BPF_W + BPF_ABS, offsetof(struct seccomp_data, nr)),
@@ -88,11 +122,14 @@ static void _init_process() {
         .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
         .filter = filter,
     };
+
+    // Install the seccomp filter.
     if (syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_SPEC_ALLOW, &prog)) {
         abort();
     }
 }
 
+// Ensure that our initialization has been done in the current process and thread.
 static void _ensure_initd() {
   static pthread_once_t init_process_once = PTHREAD_ONCE_INIT;
   pthread_once(&init_process_once, _init_process);
@@ -101,35 +138,17 @@ static void _ensure_initd() {
   pthread_once(&init_thread_once, _init_thread);
 }
 
-static long _syscall(long n, ...) {
-    va_list args;
-    va_start(args, n);
-    long arg1 = va_arg(args, long);
-    long arg2 = va_arg(args, long);
-    long arg3 = va_arg(args, long);
-    long arg4 = va_arg(args, long);
-    long arg5 = va_arg(args, long);
-    long arg6 = va_arg(args, long);
-    va_end(args);
-
-    long rv;
-
-    register long r10 __asm__("r10") = arg4;
-    register long r8 __asm__("r8") = arg5;
-    register long r9 __asm__("r9") = arg6;
-    __asm__ __volatile__("syscall"
-                         : "=a"(rv)
-                         : "a"(n), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10), "r"(r8), "r"(r9)
-                         : "rcx", "r11", "memory");
-    return rv;
-}
-
+// Handle traps from our seccomp filter.
 static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
   ucontext_t* ctx = (ucontext_t*)(voidUcontext);
   greg_t* regs = ctx->uc_mcontext.gregs;
 
+  // Value of 100000+ here causes segfault. Why?
+  char use_stack[100000];
+  (void)use_stack;
+
   char buf[100];
-  // XXX not guaranteed as signal-safe.
+  // XXX not really signal-safe. (Thanks, locales).
   sprintf(buf, "Trapped syscall %lld\n", regs[REG_RAX]);
   _syscall(SYS_write, 2, buf, strlen(buf));
 
@@ -154,11 +173,12 @@ static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
     }
   }
 
-  // 
-
+  // Make the syscall that trapped (possibly with altered parameters), using
+  // our own syscall function that won't trap again.
   regs[REG_RAX] = _syscall(n, args[0], args[1], args[2], args[3], args[4], args[5]);
 }
 
+// Use a global constructor to initialize ourselves near the beginning of process start.
 __attribute__((constructor)) static void load() {
   _ensure_initd();
 }
