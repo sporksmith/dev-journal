@@ -1,5 +1,7 @@
 #define _GNU_SOURCE
 
+#include <assert.h>
+#include <dlfcn.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <pthread.h>
@@ -22,6 +24,8 @@
 
 static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext);
 
+static void *_clone_rip = NULL;
+
 // Same API as libc's syscall(2), but our seccomp filter below ignores syscalls
 // made from this function. e.g. our our seccomp signal handler uses this to
 // make syscalls without recursively trapping.
@@ -37,14 +41,35 @@ static long _syscall(long n, ...) {
     va_end(args);
 
     long rv;
+    if (n == SYS_clone) {
+      // Grab original instruction pointer of the clone syscall
+      void* clone_rip = _clone_rip;
+      _clone_rip = NULL;
+      assert(clone_rip);
 
-    register long r10 __asm__("r10") = arg4;
-    register long r8 __asm__("r8") = arg5;
-    register long r9 __asm__("r9") = arg6;
-    __asm__ __volatile__("syscall"
-                         : "=a"(rv)
-                         : "a"(n), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10), "r"(r8), "r"(r9)
-                         : "rcx", "r11", "memory");
+      // Make the syscall, but in the child we can't return, since we're running on a new stack.
+      // Instead, *jump*.
+      register long r10 __asm__("r10") = arg4;
+      register long r8 __asm__("r8") = arg5;
+      register long r9 __asm__("r9") = (long)clone_rip;
+      __asm__ __volatile__("syscall\n"
+                           "cmp $0, %%rax\n"
+                           "jne shim_native_syscallv_out\n"
+                           "jmp *%%r9\n"
+                           "shim_native_syscallv_out:\n"
+                           : "=a"(rv)
+                           : "a"(n), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10), "r"(r8),
+                             "r"(r9)
+                           : "rcx", "r11", "memory");
+    } else {
+      register long r10 __asm__("r10") = arg4;
+      register long r8 __asm__("r8") = arg5;
+      register long r9 __asm__("r9") = arg6;
+      __asm__ __volatile__("syscall"
+                           : "=a"(rv)
+                           : "a"(n), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10), "r"(r8), "r"(r9)
+                           : "rcx", "r11", "memory");
+    }
     return rv;
 }
 
@@ -95,8 +120,8 @@ static void _init_process() {
         BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_ALLOW),
 
         /* XXX allow clone. we'll need to handle it specially, but skip for now. */
-        BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, SYS_clone, /*true-skip=*/0, /*false-skip=*/1),
-        BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_ALLOW),
+        //BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, SYS_clone, /*true-skip=*/0, /*false-skip=*/1),
+        //BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_ALLOW),
 
         /* See if instruction pointer is within the _syscall fn. */
         /* accumulator := instruction_pointer */
@@ -144,8 +169,8 @@ static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
   greg_t* regs = ctx->uc_mcontext.gregs;
 
   // Value of 100000+ here causes segfault. Why?
-  char use_stack[100000];
-  (void)use_stack;
+  // char use_stack[100000];
+  // (void)use_stack;
 
   char buf[100];
   // XXX not really signal-safe. (Thanks, locales).
@@ -173,6 +198,12 @@ static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
     }
   }
 
+  if (n == SYS_clone) {
+    // Save instruction pointer so we can jump back to it after making the real syscall.
+    assert(_clone_rip == NULL);
+    _clone_rip = (void*)regs[REG_RIP];
+  }
+
   // Make the syscall that trapped (possibly with altered parameters), using
   // our own syscall function that won't trap again.
   regs[REG_RAX] = _syscall(n, args[0], args[1], args[2], args[3], args[4], args[5]);
@@ -182,3 +213,48 @@ static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
 __attribute__((constructor)) static void load() {
   _ensure_initd();
 }
+
+#if 0
+static int (*_pthread_create_orig)(pthread_t *thread, const pthread_attr_t *attr,
+                void *(*start_routine) (void *), void *arg) = NULL;
+static void _pthread_create_orig_init() {
+    _pthread_create_orig = dlsym(RTLD_NEXT, "pthread_create");
+}
+
+struct pthread_create_args {
+    void *(*start_routine) (void *);
+    void *arg;
+};
+
+static void* _start_routine(void *vargs) {
+    struct pthread_create_args *args = vargs;
+    void *(*start_routine) (void *) = args->start_routine;
+    void *arg = args->arg;
+    free(args);
+    // Force init
+    syscall(SYS_sched_yield);
+
+    return start_routine(arg);
+}
+
+int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                   void *(*start_routine) (void *), void *arg) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, _pthread_create_orig_init);
+    void *stack_addr;
+    size_t stacksize;
+
+    pthread_attr_getstack(attr, &stack_addr, &stacksize);
+    fprintf(stderr, "pthread_attr_getstack: addr:%p size:%zu\n", stack_addr, stacksize);
+    pthread_attr_getstacksize(attr, &stacksize);
+    fprintf(stderr, "pthread_attr_getstacksize: size:%zu\n", stacksize);
+    fflush(stderr);
+
+    struct pthread_create_args *args = malloc(sizeof(*args));
+    args->start_routine = start_routine;
+    args->arg = arg;
+
+    return _pthread_create_orig(thread, attr, _start_routine, args);
+}
+#endif
+
