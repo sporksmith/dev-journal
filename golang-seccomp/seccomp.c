@@ -51,6 +51,7 @@ static long _syscall(long n, ...) {
       // Instead, *jump*.
       register long r10 __asm__("r10") = arg4;
       register long r8 __asm__("r8") = arg5;
+      // Put clone_rip in a callee-saved register
       register long r9 __asm__("r9") = (long)clone_rip;
       __asm__ __volatile__("syscall\n"
                            "cmp $0, %%rax\n"
@@ -75,7 +76,6 @@ static long _syscall(long n, ...) {
 
 // One-time initialization per thread.
 static void _init_thread() {
-#if 0
   static __thread char stack_buf[8 * 1<<20];
   stack_t stack = {
     .ss_sp = stack_buf,
@@ -85,7 +85,6 @@ static void _init_thread() {
   if (sigaltstack(&stack, NULL) != 0) {
     abort();
   }
-#endif
 }
 
 // One-time initialization per process.
@@ -165,6 +164,8 @@ static void _ensure_initd() {
 
 // Handle traps from our seccomp filter.
 static void _handle_sigsys(int signo, siginfo_t* info, void* voidUcontext) {
+  _ensure_initd();
+
   ucontext_t* ctx = (ucontext_t*)(voidUcontext);
   greg_t* regs = ctx->uc_mcontext.gregs;
 

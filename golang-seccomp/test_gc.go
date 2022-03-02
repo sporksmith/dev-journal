@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-    for i := 0; i < 100; i++ {
+    for i := 0; i < 1000; i++ {
       // Generate some garbage
       garbage := make([]int, 10000)
       // Runtime error on go 1.17
