@@ -7,7 +7,7 @@
 //! second return.
 
 use std::arch::asm;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 fn main() {
     // We're going to exec "/bin/echo" in a child process.
@@ -26,6 +26,9 @@ fn main() {
 
     // We'll store the parent's return value of vfork here.
     let mut parent_rv: i32;
+
+    // If the child's call to execve fails, we'll store its return value here.
+    let mut child_execve_rv: i64 = 0;
 
     // We use inline assembly to vfork + exec.
     //
@@ -52,9 +55,10 @@ fn main() {
 
         // execve doesn't return if it succeeds, but could return
         // if e.g. an executable file wasn't found at the the specified path.
-        // For simplicity we just emit an undefined instruction here to get a crash,
-        // but in real usage this should communicate the error to the parent and
-        // exit.
+        //
+        // We save the execve result to memory, which is still shared with the parent,
+        // and then execute an undefined instruction to crash.
+        "mov [r15], rax", // *r15 is child_execve_rv
         "ud2",
 
         // "out" label
@@ -65,6 +69,7 @@ fn main() {
         in("r12") pathname,
         in("r13") argv.as_slice().as_ptr(),
         in("r14") envp.as_slice().as_ptr(),
+        in("r15") &mut child_execve_rv as *mut _,
 
         // In the parent process, the return value of "vfork" will be in eax. Save it to
         // `parent_rv`.
@@ -74,6 +79,9 @@ fn main() {
         clobber_abi("C"),
         );
     };
+
+    // save errno, which may have been set by vfork or execve.
+    let errno_after_asm_block = unsafe { *libc::__errno_location() };
 
     // `vfork` guarantees that we'll only get here after the child has exec'd or exited, so we can
     // safely "reconstitute" and our string arguments to `execve`.
@@ -92,8 +100,23 @@ fn main() {
         .collect();
     drop(envp);
 
-    println!("Parent vfork result: {parent_rv}");
-    assert!(parent_rv > 0);
+    if parent_rv < 0 {
+        panic!(
+            "vfork failed: {}",
+            unsafe { CStr::from_ptr(libc::strerror(errno_after_asm_block)) }
+                .to_str()
+                .unwrap()
+        );
+    }
+
+    if child_execve_rv != 0 {
+        panic!(
+            "execve failed: {}",
+            unsafe { CStr::from_ptr(libc::strerror(errno_after_asm_block)) }
+                .to_str()
+                .unwrap()
+        );
+    }
 
     // Wait for child to exit
     let mut status = 0;
