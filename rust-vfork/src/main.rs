@@ -25,7 +25,7 @@ fn main() {
     let envp: [*mut i8; 1] = [std::ptr::null_mut()];
 
     // We'll store the parent's return value of vfork here.
-    let mut parent_rv: i32;
+    let mut parent_vfork_rv: i32;
 
     // If the child's call to execve fails, we'll store its return value here.
     let mut child_execve_rv: i64 = 0;
@@ -72,8 +72,8 @@ fn main() {
         in("r15") &mut child_execve_rv as *mut _,
 
         // In the parent process, the return value of "vfork" will be in eax. Save it to
-        // `parent_rv`.
-        out("eax") parent_rv,
+        // `parent_vfork_rv`.
+        out("eax") parent_vfork_rv,
 
         // The call to the vfork libc function clobbers caller-saved registers.
         clobber_abi("C"),
@@ -100,7 +100,7 @@ fn main() {
         .collect();
     drop(envp);
 
-    if parent_rv < 0 {
+    if parent_vfork_rv < 0 {
         panic!(
             "vfork failed: {}",
             unsafe { CStr::from_ptr(libc::strerror(errno_after_asm_block)) }
@@ -120,10 +120,10 @@ fn main() {
 
     // Wait for child to exit
     let mut status = 0;
-    let rv = unsafe { libc::waitpid(parent_rv, &mut status, 0) };
+    let rv = unsafe { libc::waitpid(parent_vfork_rv, &mut status, 0) };
 
     // Validate that waitpid itself succeeded.
-    assert_eq!(rv, parent_rv);
+    assert_eq!(rv, parent_vfork_rv);
 
     // Validate that child exited normally.
     assert!(libc::WIFEXITED(status));
