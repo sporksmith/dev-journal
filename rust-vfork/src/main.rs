@@ -5,6 +5,10 @@
 //!
 //! We work around it by using inline assembly to encapsulate the
 //! second return.
+//!
+//! Consider `posix_spawn` before doing this - this already safely encapsulates the sequence of
+//! "vfork, do some file and process attribute modifications, then exec". Documentation and support
+//! across different implementations of libc can be a bit spotty, though.
 
 use std::arch::asm;
 use std::ffi::{CStr, CString};
