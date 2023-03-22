@@ -1,7 +1,9 @@
 //! Example program safely using vfork to fork and exec a child process.
 //!
 //! vfork cannot be safely called from Rust code, since the compiler currently doesn't support
-//! functions that can return twice. We work around it by using inline assembly to encapsulate the
+//! functions that can return twice. See https://github.com/rust-lang/libc/issues/1596.
+//!
+//! We work around it by using inline assembly to encapsulate the
 //! second return.
 
 use std::arch::asm;
@@ -74,7 +76,7 @@ fn main() {
     };
 
     // `vfork` guarantees that we'll only get here after the child has exec'd or exited, so we can
-    // safely "reconstitute" our strings for deallocation.
+    // safely "reconstitute" and our string arguments to `execve`.
     let pathname = unsafe { CString::from_raw(pathname) };
     drop(pathname);
     let argv: Vec<_> = argv
