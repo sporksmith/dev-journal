@@ -9,6 +9,6 @@ edition = "2021"
 linux-raw-sys = { path = "../linux-raw-sys" }
 # We can directly depend on a crates.io crate with the same name, by
 # renaming it here.
-linux-raw-sys-crates-io = { package="linux-raw-sys", version="0.4.1" }
+linux-raw-sys-crates-io = { package="linux-raw-sys", version="0.3.8" }
 # rustix depends on linux-raw-sys. It'll still get the correct (crates.io) version.
 rustix = { version = "0.37.20", features = ["time", "thread"] }

@@ -60,7 +60,7 @@ checksum = "f92be4933c13fd498862a9e02a3055f8a8d9c039ce33db97306fd5a6caa7f29b"
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.1.0"
+version = "0.3.8"
 
 [[package]]
 name = "linux-raw-sys"
@@ -69,17 +69,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef53942eb7bf7ff43a617b3e2c1c4a5ecf5944a7c1bc12d7ee39bbb15e5c1519"
 
 [[package]]
-name = "linux-raw-sys"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c68cc0ca38c3ddeb34ecd3f98aaf61ade63e2f4cefa5c9bac3cea593e3ff9c7"
-
-[[package]]
 name = "myapp"
 version = "0.1.0"
 dependencies = [
- "linux-raw-sys 0.1.0",
- "linux-raw-sys 0.4.1",
+ "linux-raw-sys 0.3.8",
+ "linux-raw-sys 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustix",
 ]
 
@@ -93,7 +87,7 @@ dependencies = [
  "errno",
  "io-lifetimes",
  "libc",
- "linux-raw-sys 0.3.8",
+ "linux-raw-sys 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "windows-sys",
 ]
 
