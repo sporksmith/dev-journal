@@ -1,0 +1,14 @@
+[package]
+name = "myapp"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+linux-raw-sys = { path = "../linux-raw-sys" }
+# We can directly depend on a crates.io crate with the same name, by
+# renaming it here.
+linux-raw-sys-crates-io = { package="linux-raw-sys", version="0.4.1" }
+# rustix depends on linux-raw-sys. It'll still get the correct (crates.io) version.
+rustix = { version = "0.37.20", features = ["time", "thread"] }
