@@ -35,12 +35,22 @@ impl <K, V, S> futures::Stream for ChannelMux<K, V, S> where K: Hash + Eq {
     type Item=(K, V);
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // Read all available notifications from the notifications channel, into our indexmap.
         loop {
             match self.notifications_recv.as_mut().poll_next(cx) {
                 Poll::Ready(Some(k)) => {
                     match self.notifications.entry(k) {
-                        indexmap::map::Entry::Occupied(mut o) => {*o.get_mut() += 1; },
-                        indexmap::map::Entry::Vacant(v) => {v.insert(1);},
+                        indexmap::map::Entry::Occupied(mut o) => {
+                            // Increment the number of available items.  This
+                            // does not change where this entry appears in
+                            // iteration order of the map.
+                            *o.get_mut() += 1;
+                        },
+                        indexmap::map::Entry::Vacant(v) => {
+                            // Insert an entry indicating one ready value for `k`.
+                            // The new entry will be last in iteration order.
+                            v.insert(1);
+                        },
                     };
                 },
                 Poll::Ready(None) => // We keep a clone of the sender, and never close it.
@@ -48,6 +58,12 @@ impl <K, V, S> futures::Stream for ChannelMux<K, V, S> where K: Hash + Eq {
                 Poll::Pending => break,
             }
         }
+        let Some((k, n)) = self.notifications.first() else {
+            // Nothing ready yet.
+            return Poll::Pending;
+        };
+        let mut n = self.notifications.shift_remove(k).expect("Key unexpectedly disappeared");
+
         todo!()
        /*
           * read all available notifications from self.notifications_recv, updating self.notifications,
