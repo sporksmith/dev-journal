@@ -34,10 +34,10 @@ impl <K, V, S> ChannelMux<K, V, S> {
 impl <K, V, S> futures::Stream for ChannelMux<K, V, S> where K: Hash + Eq {
     type Item=(K, V);
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // Read all available notifications from the notifications channel, into our indexmap.
         loop {
-            match self.notifications_recv.as_mut().poll_next(cx) {
+            match self.as_mut().notifications_recv.as_mut().poll_next(cx) {
                 Poll::Ready(Some(k)) => {
                     match self.notifications.entry(k) {
                         indexmap::map::Entry::Occupied(mut o) => {
