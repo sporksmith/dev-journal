@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright (C) 2003-2007  Robey Pointer <robeypointer@gmail.com>
 #
@@ -27,7 +27,6 @@ import threading
 import traceback
 
 import paramiko
-from paramiko.py3compat import b, u, decodebytes
 
 
 # setup logging
@@ -35,7 +34,7 @@ paramiko.util.log_to_file("demo_server.log")
 
 host_key = paramiko.RSAKey(filename="test_rsa.key")
 
-print("Read key: " + u(hexlify(host_key.get_fingerprint())))
+print("Read key: " + hexlify(host_key.get_fingerprint()).decode())
 
 
 class Server(paramiko.ServerInterface):
@@ -47,7 +46,7 @@ class Server(paramiko.ServerInterface):
         b"KDqIexkgHAfID/6mqvmnSJf0b5W8v5h2pI/stOSwTQ+pxVhwJ9ctYDhRSlF0iT"
         b"UWT10hcuO4Ks8="
     )
-    good_pub_key = paramiko.RSAKey(data=decodebytes(data))
+    good_pub_key = paramiko.RSAKey(data=base64.b64decode(data))
 
     def __init__(self):
         self.event = threading.Event()
@@ -163,12 +162,12 @@ try:
         print("*** Client never asked for a shell.")
         sys.exit(1)
 
-    chan.send("\r\n\r\nWelcome to my dorky little BBS!\r\n\r\n")
+    chan.send("\r\n\r\nWelcome to my dorky little BBS!\r\n\r\n".encode())
     chan.send(
-        "We are on fire all the time!  Hooray!  Candy corn for everyone!\r\n"
+        "We are on fire all the time!  Hooray!  Candy corn for everyone!\r\n".encode()
     )
-    chan.send("Happy birthday to Robot Dave!\r\n\r\n")
-    chan.send("Username: ")
+    chan.send("Happy birthday to Robot Dave!\r\n\r\n".encode())
+    chan.send("Username: ".encode())
     f = chan.makefile("rU")
     username = f.readline().strip("\r\n")
     chan.send("\r\nI don't like you, " + username + ".\r\n")
