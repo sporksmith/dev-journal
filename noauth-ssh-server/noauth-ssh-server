@@ -99,7 +99,7 @@ class Server(paramiko.ServerInterface):
         return True
 
     def get_allowed_auths(self, username):
-        return "gssapi-keyex,gssapi-with-mic,password,publickey"
+        return "password"
 
     def check_channel_shell_request(self, channel):
         self.event.set()
