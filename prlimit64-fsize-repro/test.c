@@ -7,85 +7,57 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <limits.h>
 
 int main() {
-	// Open an output file in the parent, which the child will inherit.
+	// Open an output file
 	int fd = open("output.txt", O_CREAT|O_WRONLY, S_IRUSR|S_IWUSR);
 	if (fd == -1) {
 		perror("open");
 		exit(1);
 	}
 
-	pid_t child = fork();
-	if (child == 0) {
-		// We're in the child. First let's demonstrate that we can
-		// slightly-decrease RLIMIT_FSIZE ourselves and still write to
-		// the output file, as expected.
-		struct rlimit lim;
-		if (getrlimit(RLIMIT_FSIZE, &lim) == -1) {
-			perror("child getrlimit");
-			exit(1);
-		}
-		printf("child current limit via getrlimit: %lu\n", lim.rlim_cur);
-		--lim.rlim_cur;
-		if (setrlimit(RLIMIT_FSIZE, &lim) == -1) {
-			perror("child setrlimit");
-			exit(1);
-		}
-		if (write(fd, "x", 1) == -1) {
-			perror("child write");
-			exit(1);
-		}
-		printf("child wrote successfully\n");
+	if (write(fd, "x", 1) == -1) {
+		perror("write");
+		exit(1);
+	}
+	printf("wrote before changing rlimit\n");
 
-		// wait until parent has had a chance to call prlimit.
-		sleep(2);
-
-		// try writing a single byte.
-		if (write(fd, "x", 1) == -1) {
-			perror("child write");
-			exit(1);
-		}
-		printf("child wrote successfully again\n");
-
-		exit(0);
-	} else if (child == -1) {
-		perror("fork");
+	struct rlimit initial;
+	if (getrlimit(RLIMIT_FSIZE, &initial) == -1) {
+		perror("getrlimit");
+		exit(1);
+	}
+	printf("current limit unsigned:%lu signed:%ld\n", initial.rlim_cur, initial.rlim_cur);
+	if (initial.rlim_cur != RLIM_INFINITY) {
+		printf("this repro only works when current limit is RLIM_INFINITY\n");
 		exit(1);
 	}
 
-	// Let child do its initial rlimit twiddling and write.
-	sleep(1);
+	// Setting rlimit to signed max is ok.
+	struct rlimit max_unsigned = {.rlim_cur = LONG_MAX, .rlim_max = RLIM_INFINITY};
+	if (setrlimit(RLIMIT_FSIZE, &max_unsigned) == -1) {
+		perror("setrlimit");
+		exit(1);
+	}
+	if (write(fd, "x", 1) == -1) {
+		perror("write");
+		exit(1);
+	}
+	printf("wrote with rlimit=LONG_MAX\n");
 
-	// Decrement child limit via prlimit.
-	struct rlimit rlim;
-	if (prlimit(child, RLIMIT_FSIZE, NULL, &rlim) == -1) {
-		perror("prlimit (get)");
+	// Decrementing the initial limit from RLIM_INFINITY will cause the next write to fail.
+	// I think the problem is that this is being treated as a signed number somewhere,
+	// with RLIM_INFINITY (0xffff_ffff_ffff_ffff == -1) special-cased. Decrementing causes
+	// it to be interpreted as -2 instead of a large positive number.
+	struct rlimit decremented = {.rlim_cur = initial.rlim_cur-1, .rlim_max = initial.rlim_max};
+	if (setrlimit(RLIMIT_FSIZE, &decremented) == -1) {
+		perror("setrlimit");
 		exit(1);
 	}
-	printf("child current limit: %lu\n", rlim.rlim_cur);
-	--rlim.rlim_cur;
-	if (prlimit(child, RLIMIT_FSIZE, &rlim, NULL) == -1) {
-		perror("prlimit (set)");
+	if (write(fd, "x", 1) == -1) {
+		perror("write");
 		exit(1);
 	}
-
-	// Find out how the child exited.  Expected behavior is to exit with
-	// status 0, but instead it ends up getting SIGXFSZ, as if it had
-	// exceeded its RLIMIT_FSIZE.
-	int wstatus=0;
-	pid_t waitee = waitpid(child, &wstatus, 0);
-	if (waitee == -1) {
-		perror("waitpid");
-		exit(1);
-	}
-
-	if (WIFEXITED(wstatus)) {
-		printf("child exited with status %d\n", WEXITSTATUS(wstatus));
-	} else if (WIFSIGNALED(wstatus)) {
-		printf("child killed by signal %d\n", WTERMSIG(wstatus));
-	} else {
-		printf("unhandled child status");
-		exit(1);
-	}
+	printf("wrote with rlimit=(RLIMIT_INFINITY-1)\n");
 }
