@@ -59,6 +59,8 @@ int main() {
     perror("setrlimit");
     exit(1);
   }
+  printf("about to write with rlimit=(RLIMIT_INFINITY-1), which will cause us "
+         "to unexpectedly die\n");
   if (write(fd, "x", 1) == -1) {
     perror("write");
     exit(1);
